@@ -15,7 +15,8 @@ class AlbumCard extends StatefulWidget {
   State<AlbumCard> createState() => _AlbumCardState();
 }
 
-class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMixin {
+class _AlbumCardState extends State<AlbumCard>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
 
@@ -24,8 +25,8 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
     super.initState();
     _controller = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 100));
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
-        CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -67,7 +68,7 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
                 : null,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.5),
+                color: Colors.black.withValues(alpha: 0.5),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -91,7 +92,8 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
                     nullArtworkWidget: Container(
                       color: const Color(0xFF222222),
                       child: const Center(
-                        child: Icon(Icons.music_note, color: Colors.white12, size: 48),
+                        child: Icon(Icons.music_note,
+                            color: Colors.white12, size: 48),
                       ),
                     ),
                   ),
@@ -101,7 +103,9 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
               Text(
                 widget.song.title,
                 style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -131,14 +135,17 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
                     ),
                     padding: const EdgeInsets.all(8),
                     child: Icon(
-                      isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      isPlaying
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
                       color: Colors.black,
                       size: 26,
                     ),
                   ),
                   IconButton(
                     iconSize: 22,
-                    icon: Icon(Icons.more_vert_rounded, color: Colors.grey[400]),
+                    icon:
+                        Icon(Icons.more_vert_rounded, color: Colors.grey[400]),
                     onPressed: () {
                       // Options menu could go here
                     },

@@ -48,7 +48,7 @@ class _CarModeScreenState extends State<CarModeScreen> {
     final song = audioProvider.currentSong;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0B0B0D),
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: song == null
             ? _EmptyCarMode(
@@ -57,18 +57,18 @@ class _CarModeScreenState extends State<CarModeScreen> {
               )
             : Padding(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 10,
+                  horizontal: 28,
+                  vertical: 12,
                 ),
                 child: Row(
                   children: [
                     Expanded(
-                      flex: 7,
+                      flex: 6,
                       child: _ArtworkPanel(song: song),
                     ),
-                    const SizedBox(width: 22),
+                    const SizedBox(width: 30),
                     Expanded(
-                      flex: 13,
+                      flex: 14,
                       child: _CarModeControls(
                         audioProvider: audioProvider,
                         song: song,
@@ -103,7 +103,7 @@ class _CarModeControls extends StatelessWidget {
     final album = (song.album == null ||
             song.album!.trim().isEmpty ||
             song.album == '<unknown>')
-        ? 'Álbum desconocido'
+        ? 'Desconocido'
         : song.album!.trim();
     final artist = (song.artist == null || song.artist == '<unknown>')
         ? 'Artista desconocido'
@@ -140,14 +140,14 @@ class _CarModeControls extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               MarqueeText(
                 text: TitleUtils.getDisplayTitle(song),
-                height: 38,
+                height: 44,
                 velocity: 32,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 30,
+                  fontSize: 36,
                   fontWeight: FontWeight.w800,
                   height: 1.05,
                 ),
@@ -159,7 +159,7 @@ class _CarModeControls extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: Colors.white70,
-                  fontSize: 20,
+                  fontSize: 22,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -176,7 +176,7 @@ class _CarModeControls extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white54,
-                        fontSize: 17,
+                        fontSize: 18,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -196,14 +196,14 @@ class _CarModeControls extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white54,
-                        fontSize: 17,
+                        fontSize: 18,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               StreamBuilder<DurationState>(
                 stream: audioProvider.durationStateStream,
                 builder: (context, snapshot) {
@@ -268,13 +268,13 @@ class _CarModeControls extends StatelessWidget {
                   );
                 },
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   _RoundControl(
                     icon: Icons.skip_previous_rounded,
-                    size: 62,
+                    size: 68,
                     onPressed: audioProvider.previousSmart,
                   ),
                   StreamBuilder<bool>(
@@ -285,7 +285,7 @@ class _CarModeControls extends StatelessWidget {
                         icon: isPlaying
                             ? Icons.pause_rounded
                             : Icons.play_arrow_rounded,
-                        size: 76,
+                        size: 88,
                         filled: true,
                         onPressed: audioProvider.togglePlayPause,
                       );
@@ -293,20 +293,20 @@ class _CarModeControls extends StatelessWidget {
                   ),
                   _RoundControl(
                     icon: Icons.skip_next_rounded,
-                    size: 62,
+                    size: 68,
                     onPressed: audioProvider.next,
                   ),
                   _RoundControl(
                     icon: Icons.stop_rounded,
-                    size: 58,
+                    size: 64,
                     onPressed: audioProvider.stop,
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               Wrap(
-                spacing: 12,
-                runSpacing: 12,
+                spacing: 14,
+                runSpacing: 10,
                 alignment: WrapAlignment.center,
                 children: [
                   _ModeButton(
@@ -361,12 +361,12 @@ class _ArtworkPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: FractionallySizedBox(
-        widthFactor: 0.82,
-        heightFactor: 0.82,
+        widthFactor: 0.92,
+        heightFactor: 0.78,
         child: AspectRatio(
           aspectRatio: 1,
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(4),
             child: QueryArtworkWidget(
               id: song.id,
               type: ArtworkType.AUDIO,
@@ -445,13 +445,13 @@ class _ModeButton extends StatelessWidget {
           backgroundColor:
               selected ? AppTheme.primaryColor : const Color(0xFF202026),
           foregroundColor: selected ? Colors.black : Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 18),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
         icon: Icon(icon, size: 22),
         label: Text(
           label,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         ),
         onPressed: onPressed,
       ),
@@ -478,13 +478,13 @@ class _TopButton extends StatelessWidget {
         style: TextButton.styleFrom(
           foregroundColor: Colors.white,
           backgroundColor: const Color(0xFF202026),
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
         icon: Icon(icon, size: 22),
         label: Text(
           label,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         ),
         onPressed: onPressed,
       ),

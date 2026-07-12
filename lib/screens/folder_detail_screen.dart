@@ -10,49 +10,54 @@ import 'search_screen.dart';
 
 class FolderDetailScreen extends StatelessWidget {
   final String folderName;
+  final String folderPath;
   final List<SongModel> songs;
 
   const FolderDetailScreen({
     super.key,
     required this.folderName,
+    required this.folderPath,
     required this.songs,
   });
 
   String _formatTotalDuration(List<SongModel> folderSongs) {
-    if (folderSongs.isEmpty) return "0:00";
-    
-    int totalMs = folderSongs.fold(0, (sum, song) => sum + (song.duration ?? 0));
+    if (folderSongs.isEmpty) return '0:00';
+
+    final totalMs = folderSongs.fold<int>(
+      0,
+      (sum, song) => sum + (song.duration ?? 0),
+    );
     final duration = Duration(milliseconds: totalMs);
     final hours = duration.inHours;
     final minutes = (duration.inMinutes % 60).toString().padLeft(2, '0');
     final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
 
-    if (hours > 0) {
-      return "$hours:$minutes:$seconds";
-    }
-    return "$minutes:$seconds";
+    if (hours > 0) return '$hours:$minutes:$seconds';
+    return '$minutes:$seconds';
   }
 
   @override
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
-    
-    // Filter the songs to ensure they still exist in the provider's list
     final currentFolderSongs = audioProvider.allSongs
-        .where((s) => songs.any((original) => original.id == s.id))
+        .where((song) =>
+            _parentPath(song.data) == folderPath &&
+            songs.any((original) => original.id == song.id))
         .toList();
 
     if (currentFolderSongs.isEmpty && songs.isNotEmpty) {
-      // If all songs were deleted or the folder is gone, we might want to pop or show empty state
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (Navigator.canPop(context)) Navigator.pop(context);
       });
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    // Get the first available album art from the folder
-    final firstSongWithArt = currentFolderSongs.firstWhere((song) => song.albumId != null, orElse: () => currentFolderSongs.isNotEmpty ? currentFolderSongs.first : songs.first);
-    final String folderPath = currentFolderSongs.isNotEmpty ? currentFolderSongs.first.data.replaceAll(currentFolderSongs.first.displayName, "") : "Directorio desconocido";
+    final firstSongWithArt = currentFolderSongs.firstWhere(
+      (song) => song.albumId != null,
+      orElse: () => currentFolderSongs.isNotEmpty
+          ? currentFolderSongs.first
+          : songs.first,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -75,18 +80,36 @@ class FolderDetailScreen extends StatelessWidget {
             color: AppTheme.surfaceColor,
             onSelected: (value) {
               if (value == 'reproducir') {
-                audioProvider.playPlaylist(currentFolderSongs, 0);
-              } else if (value == 'añadir') {
+                audioProvider.playFolderSongs(
+                    folderPath, currentFolderSongs, 0);
+              } else if (value == 'anadir') {
                 audioProvider.addAllToQueue(currentFolderSongs);
               } else if (value == 'delete') {
-                _showDeleteConfirmation(context, audioProvider, folderName, folderPath, currentFolderSongs);
+                _showDeleteConfirmation(
+                  context,
+                  audioProvider,
+                  folderName,
+                  folderPath,
+                );
               }
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(value: 'reproducir', child: Text('Reproducir')),
-              const PopupMenuItem(value: 'añadir', child: Text('Añadir a lista')),
+              const PopupMenuItem(
+                value: 'reproducir',
+                child: Text('Reproducir'),
+              ),
+              const PopupMenuItem(
+                value: 'anadir',
+                child: Text('Anadir a lista'),
+              ),
               const PopupMenuDivider(),
-              const PopupMenuItem(value: 'delete', child: Text('Borrar carpeta', style: TextStyle(color: Colors.red))),
+              const PopupMenuItem(
+                value: 'delete',
+                child: Text(
+                  'Borrar carpeta',
+                  style: TextStyle(color: Colors.red),
+                ),
+              ),
             ],
           ),
         ],
@@ -103,7 +126,10 @@ class FolderDetailScreen extends StatelessWidget {
                 slivers: [
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0,
+                        vertical: 8.0,
+                      ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -118,7 +144,11 @@ class FolderDetailScreen extends StatelessWidget {
                                 height: 120,
                                 width: 120,
                                 color: Colors.grey[800],
-                                child: const Icon(Icons.folder, color: Colors.grey, size: 60),
+                                child: const Icon(
+                                  Icons.folder,
+                                  color: Colors.grey,
+                                  size: 60,
+                                ),
                               ),
                             ),
                           ),
@@ -140,14 +170,20 @@ class FolderDetailScreen extends StatelessWidget {
                                 const SizedBox(height: 8),
                                 Text(
                                   folderPath,
-                                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                                  style: const TextStyle(
+                                    color: AppTheme.textSecondary,
+                                    fontSize: 13,
+                                  ),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 const SizedBox(height: 12),
                                 Text(
-                                  "${songs.length} Canciones • ${_formatTotalDuration(songs)}",
-                                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                                  '${currentFolderSongs.length} Canciones - ${_formatTotalDuration(currentFolderSongs)}',
+                                  style: const TextStyle(
+                                    color: AppTheme.textSecondary,
+                                    fontSize: 13,
+                                  ),
                                 ),
                               ],
                             ),
@@ -156,22 +192,23 @@ class FolderDetailScreen extends StatelessWidget {
                       ),
                     ),
                   ),
-
-                  // Action Buttons removed per request to enforce strict folder-only context
-
-                  // Song List
                   SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
                         final song = currentFolderSongs[index];
-                        final isSelected = audioProvider.currentSong?.id == song.id;
+                        final isSelected =
+                            audioProvider.currentSong?.id == song.id;
 
                         return SongListTile(
                           song: song,
                           isSelected: isSelected,
                           showTrailing: false,
                           onTap: () {
-                            audioProvider.playFolderSongs(folderPath, currentFolderSongs, index);
+                            audioProvider.playFolderSongs(
+                              folderPath,
+                              currentFolderSongs,
+                              index,
+                            );
                           },
                         );
                       },
@@ -188,28 +225,48 @@ class FolderDetailScreen extends StatelessWidget {
     );
   }
 
-  void _showDeleteConfirmation(BuildContext context, AudioProvider audioProvider, String name, String path, List<SongModel> songs) {
+  String _parentPath(String filePath) {
+    final normalized = filePath.replaceAll('\\', '/');
+    final separator = normalized.lastIndexOf('/');
+    return separator > 0 ? normalized.substring(0, separator) : '';
+  }
+
+  void _showDeleteConfirmation(
+    BuildContext context,
+    AudioProvider audioProvider,
+    String name,
+    String path,
+  ) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.surfaceColor,
-        title: const Text('Eliminar carpeta', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'Eliminar carpeta',
+          style: TextStyle(color: Colors.white),
+        ),
         content: Text(
-          '¿Estás seguro de que quieres borrar la carpeta "$name" de la lista? (No se borrarán los archivos físicos)',
+          'Seguro que quieres borrar la carpeta "$name" de la lista? No se borran los archivos fisicos.',
           style: const TextStyle(color: AppTheme.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('CANCELAR', style: TextStyle(color: AppTheme.primaryColor)),
+            child: const Text(
+              'CANCELAR',
+              style: TextStyle(color: AppTheme.primaryColor),
+            ),
           ),
           TextButton(
             onPressed: () {
               audioProvider.deleteFolder(path);
               Navigator.pop(context);
-              Navigator.pop(context); // Close detail screen as it's being "deleted"
+              Navigator.pop(context);
             },
-            child: const Text('ELIMINAR', style: TextStyle(color: Colors.red)),
+            child: const Text(
+              'ELIMINAR',
+              style: TextStyle(color: Colors.red),
+            ),
           ),
         ],
       ),

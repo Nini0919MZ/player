@@ -122,7 +122,7 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                     song.artist ?? "Desconocido",
                     style: TextStyle(
                         color: isPlaying
-                            ? Colors.pink.withOpacity(0.7)
+                            ? Colors.pink.withValues(alpha: 0.7)
                             : Colors.white54,
                         fontSize: 13),
                     maxLines: 1,

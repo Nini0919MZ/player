@@ -5,15 +5,24 @@ import 'dart:async';
 
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   late final AudioPlayer _player;
-  ConcatenatingAudioSource _playlist = ConcatenatingAudioSource(children: []);
 
   VoidCallback? onToggleFavorite;
-  VoidCallback? onTrackCompleted;
+  FutureOr<void> Function()? onEpicenterToggleRequested;
+  FutureOr<void> Function()? onPreviousFolderRequested;
+  FutureOr<void> Function()? onNextFolderRequested;
+  bool Function()? isEpicenterEnabledProvider;
+  FutureOr<void> Function()? onTrackCompleted;
   FutureOr<void> Function()? onPlayPauseRequested;
   FutureOr<void> Function()? onStopRequested;
   FutureOr<void> Function()? onPreviousRequested;
   FutureOr<void> Function()? onNextRequested;
+  Future<List<MediaItem>> Function(String parentMediaId,
+      [Map<String, dynamic>? options])? onGetChildrenRequested;
+  Future<MediaItem?> Function(String mediaId)? onGetMediaItemRequested;
+  FutureOr<void> Function(String mediaId, [Map<String, dynamic>? extras])?
+      onPlayFromMediaIdRequested;
   bool _isAdvancing = false;
+  bool _androidAutoModeActive = false;
   Timer? _debounceTimer;
 
   MyAudioHandler() {
@@ -22,7 +31,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   Future<int?> getAndroidAudioSessionId() async {
-    return await _player.androidAudioSessionId;
+    return _player.androidAudioSessionId;
   }
 
   Future<void> _init() async {
@@ -42,49 +51,77 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       if (duration != null &&
           position >= duration &&
           position.inMilliseconds > 0) {
-        _triggerNextTrackSafe();
+        _handleCompletionSignal();
       }
     });
 
     // 4. Listen to standard completed state as well
     _player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
-        _triggerNextTrackSafe();
+        _handleCompletionSignal();
       }
     });
   }
 
-  void _triggerNextTrackSafe() {
+  void _handleCompletionSignal() {
+    debugPrint(
+      '[AudioHandler] completion signal: '
+      'queue=${queue.value.length}, '
+      'index=${_player.currentIndex}, '
+      'hasNext=${_player.hasNext}, '
+      'processingState=${_player.processingState}',
+    );
+    unawaited(_triggerNextTrackSafe());
+  }
+
+  Future<void> _triggerNextTrackSafe() async {
     if (_isAdvancing) return;
     _isAdvancing = true;
 
-    // Prevent multiple triggers within 1.5 seconds
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 1500), () {
-      _isAdvancing = false;
-    });
-
-    if (_player.hasNext) {
-      _player.seekToNext();
-    } else {
-      stop();
-      if (onTrackCompleted != null) {
-        onTrackCompleted!();
+    try {
+      if (_player.hasNext) {
+        debugPrint(
+          '[AudioHandler] completion -> seekToNext: '
+          'from=${_player.currentIndex}, queue=${queue.value.length}',
+        );
+        await _player.seekToNext();
+        return;
       }
+
+      final completionAction = onTrackCompleted;
+      if (completionAction != null) {
+        debugPrint(
+          '[AudioHandler] completion -> onTrackCompleted: '
+          'queue=${queue.value.length}, index=${_player.currentIndex}',
+        );
+        await completionAction();
+        return;
+      }
+
+      await stopDirect();
+    } catch (e, stackTrace) {
+      debugPrint('Error handling track completion: $e');
+      debugPrintStack(stackTrace: stackTrace);
+      try {
+        await stopDirect();
+      } catch (stopError) {
+        debugPrint('Error stopping after completion failure: $stopError');
+      }
+    } finally {
+      _debounceTimer?.cancel();
+      _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+        _isAdvancing = false;
+      });
     }
   }
 
   void _broadcastState(PlaybackEvent event) {
     final playing = _player.playing;
     playbackState.add(playbackState.value.copyWith(
-      controls: [
-        MediaControl.skipToPrevious,
-        playing ? MediaControl.pause : MediaControl.play,
-        MediaControl.skipToNext,
-        MediaControl.stop,
-      ],
+      controls: _controlsForContext(playing),
       systemActions: const {},
-      androidCompactActionIndices: const [0, 1, 2],
+      androidCompactActionIndices:
+          _androidAutoModeActive ? const [1, 2, 3] : const [0, 1, 2],
       processingState: const {
             ProcessingState.idle: AudioProcessingState.idle,
             ProcessingState.loading: AudioProcessingState.loading,
@@ -99,6 +136,47 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       speed: _player.speed,
       queueIndex: event.currentIndex,
     ));
+  }
+
+  List<MediaControl> _controlsForContext(bool playing) {
+    final playPause = playing ? MediaControl.pause : MediaControl.play;
+
+    if (!_androidAutoModeActive) {
+      return [
+        MediaControl.skipToPrevious,
+        playPause,
+        MediaControl.skipToNext,
+        MediaControl.stop,
+      ];
+    }
+
+    final isEpicenterEnabled = isEpicenterEnabledProvider?.call() ?? false;
+    return [
+      MediaControl.custom(
+        androidIcon: 'drawable/ic_folder_previous',
+        label: 'Folder anterior',
+        name: 'previous_folder',
+      ),
+      MediaControl.skipToPrevious,
+      playPause,
+      MediaControl.skipToNext,
+      MediaControl.custom(
+        androidIcon: 'drawable/ic_folder_next',
+        label: 'Folder siguiente',
+        name: 'next_folder',
+      ),
+      MediaControl.custom(
+        androidIcon: 'drawable/ic_epicenter',
+        label: isEpicenterEnabled ? 'Epicentro ON' : 'Epicentro',
+        name: 'epicenter_toggle',
+      ),
+    ];
+  }
+
+  void _markAndroidAutoActive() {
+    if (_androidAutoModeActive) return;
+    _androidAutoModeActive = true;
+    _broadcastState(_player.playbackEvent);
   }
 
   @override
@@ -135,6 +213,18 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
     if (name == 'toggle_favorite' && onToggleFavorite != null) {
       onToggleFavorite!();
+      return;
+    } else if (name == 'epicenter_toggle' &&
+        onEpicenterToggleRequested != null) {
+      await onEpicenterToggleRequested!();
+      _broadcastState(_player.playbackEvent);
+      return;
+    } else if (name == 'previous_folder' && onPreviousFolderRequested != null) {
+      await onPreviousFolderRequested!();
+      return;
+    } else if (name == 'next_folder' && onNextFolderRequested != null) {
+      await onNextFolderRequested!();
+      return;
     }
   }
 
@@ -166,6 +256,35 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       _player.seek(Duration.zero, index: index);
 
   @override
+  Future<List<MediaItem>> getChildren(String parentMediaId,
+      [Map<String, dynamic>? options]) {
+    _markAndroidAutoActive();
+    final action = onGetChildrenRequested;
+    if (action != null) return action(parentMediaId, options);
+    return super.getChildren(parentMediaId, options);
+  }
+
+  @override
+  Future<MediaItem?> getMediaItem(String mediaId) {
+    _markAndroidAutoActive();
+    final action = onGetMediaItemRequested;
+    if (action != null) return action(mediaId);
+    return super.getMediaItem(mediaId);
+  }
+
+  @override
+  Future<void> playFromMediaId(String mediaId,
+      [Map<String, dynamic>? extras]) async {
+    _markAndroidAutoActive();
+    final action = onPlayFromMediaIdRequested;
+    if (action != null) {
+      await action(mediaId, extras);
+      return;
+    }
+    await super.playFromMediaId(mediaId, extras);
+  }
+
+  @override
   Future<void> updateQueue(List<MediaItem> queue) async {
     this.queue.add(queue);
   }
@@ -186,7 +305,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     Duration initialPosition, {
     required bool shouldPlay,
   }) async {
-    // Safe Mode Switching: rebuild ConcatenatingAudioSource entirely to prevent caching bugs
+    // Rebuild the native playlist entirely to prevent stale source caching.
     await _player.stop();
 
     if (newQueue.isEmpty) {
@@ -198,13 +317,18 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     final safeIndex = initialIndex.clamp(0, newQueue.length - 1);
     queue.add(newQueue);
     mediaItem.add(newQueue[safeIndex]);
-
-    _playlist = ConcatenatingAudioSource(
-        children: newQueue.map(_createAudioSource).toList());
+    debugPrint(
+      '[AudioHandler] replacePlaylist: '
+      'queue=${newQueue.length}, initialIndex=$safeIndex, '
+      'shouldPlay=$shouldPlay',
+    );
 
     // Explicitly set the initial index down at the native source creation!
-    await _player.setAudioSource(_playlist,
-        initialIndex: safeIndex, initialPosition: initialPosition);
+    await _player.setAudioSources(
+      newQueue.map(_createAudioSource).toList(),
+      initialIndex: safeIndex,
+      initialPosition: initialPosition,
+    );
 
     if (shouldPlay) {
       await _player.play();
@@ -213,9 +337,15 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     }
   }
 
-  AudioSource _createAudioSource(MediaItem item) => AudioSource.uri(
-      item.id.startsWith('/') ? Uri.file(item.id) : Uri.parse(item.id),
-      tag: item);
+  AudioSource _createAudioSource(MediaItem item) {
+    final source = item.extras?['source'] as String? ??
+        item.extras?['songPath'] as String? ??
+        item.id;
+    return AudioSource.uri(
+      source.startsWith('/') ? Uri.file(source) : Uri.parse(source),
+      tag: item,
+    );
+  }
 
   Future<void> playDirect() => _player.play();
 

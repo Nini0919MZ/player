@@ -16,7 +16,7 @@ class CarModeLibraryScreen extends StatefulWidget {
 }
 
 class _CarModeLibraryScreenState extends State<CarModeLibraryScreen> {
-  _CarLibraryLevel _level = _CarLibraryLevel.songs;
+  _CarLibraryLevel _level = _CarLibraryLevel.folders;
   String? _selectedFolderPath;
 
   @override
@@ -48,7 +48,7 @@ class _CarModeLibraryScreenState extends State<CarModeLibraryScreen> {
           _level == _CarLibraryLevel.folders
               ? 'Folders'
               : _selectedFolderPath == null
-                  ? 'Lista actual'
+                  ? 'Todas las canciones'
                   : _folderName(_selectedFolderPath!),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -93,78 +93,44 @@ class _CarModeLibraryScreenState extends State<CarModeLibraryScreen> {
       thumbVisibility: true,
       child: ListView.separated(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-        itemCount: folders.length,
+        itemCount: folders.length + 1,
         separatorBuilder: (_, __) => const SizedBox(height: 8),
         itemBuilder: (context, index) {
-          final folderPath = folders[index];
+          if (index == 0) {
+            return _DirectoryTile(
+              icon: Icons.library_music_rounded,
+              title: 'Todas las canciones',
+              subtitle: '${audioProvider.allSongs.length} canciones',
+              selected: audioProvider.currentSong != null &&
+                  audioProvider.currentPlaylist.length ==
+                      audioProvider.allSongs.length,
+              onTap: () {
+                setState(() {
+                  _selectedFolderPath = null;
+                  _level = _CarLibraryLevel.songs;
+                });
+              },
+            );
+          }
+
+          final folderIndex = index - 1;
+          final folderPath = folders[folderIndex];
           final songs = _songsInFolder(audioProvider, folderPath);
           final isCurrent = audioProvider.currentSong != null &&
               _parentPath(audioProvider.currentSong!.data) == folderPath;
 
-          return Material(
-            color: isCurrent
-                ? AppTheme.primaryColor.withValues(alpha: 0.18)
-                : const Color(0xFF1B1B20),
-            borderRadius: BorderRadius.circular(10),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: () {
-                setState(() {
-                  _selectedFolderPath = folderPath;
-                  _level = _CarLibraryLevel.songs;
-                });
-              },
-              child: SizedBox(
-                height: 72,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
-                  child: Row(
-                    children: [
-                      Icon(
-                        isCurrent
-                            ? Icons.folder_special_rounded
-                            : Icons.folder_rounded,
-                        size: 34,
-                        color:
-                            isCurrent ? AppTheme.primaryColor : Colors.white70,
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _folderName(folderPath),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              '${songs.length} canciones',
-                              style: const TextStyle(
-                                color: Colors.white54,
-                                fontSize: 15,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Icon(
-                        Icons.chevron_right_rounded,
-                        color: Colors.white54,
-                        size: 32,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+          return _DirectoryTile(
+            icon:
+                isCurrent ? Icons.folder_special_rounded : Icons.folder_rounded,
+            title: _folderName(folderPath),
+            subtitle: '${songs.length} canciones',
+            selected: isCurrent,
+            onTap: () {
+              setState(() {
+                _selectedFolderPath = folderPath;
+                _level = _CarLibraryLevel.songs;
+              });
+            },
           );
         },
       ),
@@ -277,7 +243,7 @@ class _CarModeLibraryScreenState extends State<CarModeLibraryScreen> {
   List<SongModel> _songsForCurrentLevel(AudioProvider audioProvider) {
     final folderPath = _selectedFolderPath;
     if (folderPath != null) return _songsInFolder(audioProvider, folderPath);
-    return List<SongModel>.from(audioProvider.currentPlaylist);
+    return List<SongModel>.from(audioProvider.allSongs);
   }
 
   List<SongModel> _songsInFolder(
@@ -296,7 +262,7 @@ class _CarModeLibraryScreenState extends State<CarModeLibraryScreen> {
   ) async {
     final folderPath = _selectedFolderPath;
     if (folderPath == null) {
-      await audioProvider.playPlaylist(songs, index);
+      await audioProvider.playGlobalQueue(index);
     } else {
       await audioProvider.playFolderSongs(folderPath, songs, index);
     }
@@ -327,6 +293,83 @@ class _CarModeLibraryScreenState extends State<CarModeLibraryScreen> {
     final minutes = duration.inMinutes;
     final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$minutes:$seconds';
+  }
+}
+
+class _DirectoryTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _DirectoryTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected
+          ? AppTheme.primaryColor.withValues(alpha: 0.18)
+          : const Color(0xFF1B1B20),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: SizedBox(
+          height: 72,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 34,
+                  color: selected ? AppTheme.primaryColor : Colors.white70,
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.white54,
+                  size: 32,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

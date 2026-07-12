@@ -179,7 +179,7 @@ class _PlayerModalContent extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Colors.grey[900]!.withOpacity(0.8),
+              Colors.grey[900]!.withValues(alpha: 0.8),
               const Color(0xFF121212),
             ],
           ),
@@ -311,7 +311,7 @@ class _PlayerModalContent extends StatelessWidget {
                         child: Center(
                           child: Icon(
                             Icons.music_note_rounded,
-                            color: Colors.white.withOpacity(0.15),
+                            color: Colors.white.withValues(alpha: 0.15),
                             size: 160,
                           ),
                         ),

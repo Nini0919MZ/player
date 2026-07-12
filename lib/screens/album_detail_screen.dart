@@ -45,7 +45,7 @@ class AlbumDetailScreen extends StatelessWidget {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withOpacity(0.5),
+                      Colors.black.withValues(alpha: 0.5),
                       const Color(0xFF121212),
                     ],
                   ),

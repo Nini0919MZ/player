@@ -334,6 +334,7 @@ class _SearchScreenState extends State<SearchScreen> {
       MaterialPageRoute(
         builder: (_) => FolderDetailScreen(
           folderName: folderName,
+          folderPath: folderPath,
           songs: folderSongs,
         ),
       ),
