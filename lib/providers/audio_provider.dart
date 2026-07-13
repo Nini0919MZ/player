@@ -17,6 +17,8 @@ import '../models/duration_state.dart';
 import '../services/audio_handler.dart';
 import '../services/state_persistence.dart';
 import '../services/storage_scanner.dart';
+import '../services/library_database.dart';
+import '../services/library_sync_service.dart';
 import '../utils/title_utils.dart';
 
 enum AudioPreset { concertHall, chamber, cathedral, studio, plate }
@@ -48,6 +50,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   List<double> _eqGains = [3, -1, 0, 1, 2, 1, 0, -2, -4];
 
   List<SongModel> _allSongs = [];
+  Map<String, int> _songIndexByPath = {};
   List<SongModel> _currentPlaylist = [];
   List<SongModel> _globalQueue = [];
   List<SongModel> _folderQueue = [];
@@ -68,6 +71,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   DateTime? _lastTapTime;
   Timer? _libraryRefreshDebounce;
   bool _isRefreshingLibrary = false;
+  bool _isSyncing = false;
   bool _hasFinishedStartup = false;
   DateTime? _ignoreMediaChangesUntil;
   final Map<int, Uri> _systemArtworkUriCache = {};
@@ -94,6 +98,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   AudioPlayer get player => _player;
   OnAudioQuery get audioQuery => _audioQuery;
   Set<int> get favoriteIds => _favoriteIds;
+  bool get isSyncing => _isSyncing;
 
   // Concert Hall Getters
   AudioPreset get currentPreset => _currentPreset;
@@ -163,20 +168,34 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _init() async {
     await _requestInitialPermissions();
     _isEpicenterEnabled = await StatePersistence.loadEpicenterEnabled();
+    _hasFinishedStartup = true;
+    _ignoreMediaChangesUntil = DateTime.now().add(const Duration(seconds: 3));
 
-    final restoredFromCache = await _restoreLibraryCache();
-    if (restoredFromCache) {
+    print('[SQL] Buscando datos indexados en SQLite...');
+    final restoredFromDatabase = await _restoreFromDatabase();
+    if (restoredFromDatabase) {
+      print('[SQL] Datos restaurados correctamente desde SQLite.');
       _isLoading = false;
       notifyListeners();
       await _loadPlaybackState();
+      _scheduleLibraryRefresh(); // Trigger full refresh in background
     } else {
-      await _refreshLibraryFromDevice(showLoading: true);
-      await _loadPlaybackState();
+      print('[SQL] No se encontraron datos en SQLite. Intentando caché JSON...');
+      // Fallback si SQLite está vacío (Primer inicio)
+      final restoredFromCache = await _restoreLibraryCache();
+      if (restoredFromCache) {
+        print('[SQL] Datos restaurados desde caché JSON.');
+        _isLoading = false;
+        notifyListeners();
+        await _loadPlaybackState();
+      } else {
+        print('[SQL] Cargando biblioteca desde el dispositivo por primera vez...');
+        await _refreshLibraryFromDevice(showLoading: true);
+        await _loadPlaybackState();
+      }
     }
 
     _listenToPlayer();
-    _hasFinishedStartup = true;
-    _ignoreMediaChangesUntil = DateTime.now().add(const Duration(seconds: 3));
   }
 
   void _listenToPlayer() {
@@ -216,49 +235,208 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     };
   }
 
-  Future<void> _refreshLibraryFromDevice({required bool showLoading}) async {
-    if (_isRefreshingLibrary) return;
+  /// Refresco completamente incremental.
+  /// Retorna un [SyncResult] con el detalle de cambios, o null si no hubo cambios.
+  Future<SyncResult?> _refreshLibraryFromDevice({required bool showLoading}) async {
+    if (_isRefreshingLibrary) return null;
     _isRefreshingLibrary = true;
+
     if (showLoading) {
       _isLoading = true;
+      notifyListeners();
     }
-    _isIndexing = true;
-    _indexingProcessed = 0;
-    _indexingTotal = 0;
-    _indexedSongCount = 0;
-    _indexingCurrentTitle = null;
-    notifyListeners();
 
+    SyncResult? result;
     try {
+      // Una sola consulta a MediaStore
       final rawSongs = await _audioQuery.querySongs(
         sortType: SongSortType.DISPLAY_NAME,
         orderType: OrderType.ASC_OR_SMALLER,
         uriType: UriType.EXTERNAL,
       );
 
-      _indexingTotal = rawSongs.length;
-      notifyListeners();
+      // Escaneo completo sólo si no hay índice en absoluto
+      if (_allSongs.isEmpty || !await LibraryDatabase.instance.hasIndexedData) {
+        _isIndexing = true;
+        _indexingProcessed = 0;
+        _indexingTotal = rawSongs.length;
+        _indexedSongCount = 0;
+        _indexingCurrentTitle = null;
+        notifyListeners();
 
-      final freshSongs = await StorageScanner.filterSongs(
-        rawSongs,
-        onProgress: _updateIndexingProgress,
-      );
-      final freshAlbums = await _audioQuery.queryAlbums();
-
-      await _applyFreshLibrary(freshSongs, freshAlbums);
-      await _saveLibraryCache();
+        final freshSongs = await StorageScanner.filterSongs(
+          rawSongs,
+          onProgress: _updateIndexingProgress,
+        );
+        final freshAlbums = await _audioQuery.queryAlbums();
+        await _applyFreshLibrary(freshSongs, freshAlbums);
+        await _indexSongsToDatabase();
+        await _saveLibraryCache();
+        // Reportamos inserción de todos como primer índice
+        result = SyncResult(freshSongs, [], {});
+      } else {
+        // ── RUTA INCREMENTAL ──────────────────────────────────────────────
+        // Para canciones YA conocidas: sólo verificamos directorio una vez
+        // y saltamos isValidAudioFile (ya pasaron ese filtro antes).
+        final knownPaths = _allSongs.map((s) => s.data).toSet();
+        final freshSongs = await StorageScanner.filterSongs(
+          rawSongs,
+          knownPaths: knownPaths,
+        );
+        result = await _applyIncrementalSync(freshSongs);
+      }
     } finally {
       _isRefreshingLibrary = false;
       _isIndexing = false;
+      _isSyncing = false;
       _indexingCurrentTitle = null;
       _isLoading = false;
-      notifyListeners();
+      // Solo notifica si algo cambió o si estábamos en modo loading
+      if (showLoading || (result != null && result.hasChanges)) {
+        notifyListeners();
+      }
+    }
+    return result;
+  }
+
+  /// Aplica el diff de forma incremental. No toca reproducción ni playlists
+  /// a menos que sea estrictamente necesario. Retorna [SyncResult] con el diff,
+  /// o null si no hay cambios.
+  Future<SyncResult?> _applyIncrementalSync(List<SongModel> freshSongs) async {
+    final syncStopwatch = Stopwatch()..start();
+
+    // ── 1. DIFF contra SQLite snapshot (una sola lectura) ────────────────
+    final diff = await LibrarySyncService.computeDiff(freshSongs);
+
+    if (!diff.hasChanges) {
+      syncStopwatch.stop();
+      debugPrint('[METRICS] === SYNC INCREMENTAL: SIN CAMBIOS (${freshSongs.length} canciones, ${syncStopwatch.elapsedMilliseconds} ms) ===');
+      return null;
+    }
+
+    final unchanged = freshSongs.length - diff.toInsert.length - diff.toUpdate.length;
+
+    // ── 2. SQLite: solo operaciones necesarias ───────────────────────────
+    // Usamos deleteByPaths (diff ya calculado) — sin segunda consulta SELECT.
+    if (diff.toDelete.isNotEmpty) {
+      await LibraryDatabase.instance.deleteByPaths(diff.toDelete);
+    }
+    if (diff.toInsert.isNotEmpty || diff.toUpdate.isNotEmpty) {
+      final upserts = [...diff.toInsert, ...diff.toUpdate];
+      await LibraryDatabase.instance.upsertSongs(
+        upserts.map((s) => s.getMap).toList(),
+      );
+    }
+
+    // ── 3. Memoria in-place: primero updates (índices estables) ──────────
+    bool structureChanged = false;
+
+    if (diff.toUpdate.isNotEmpty) {
+      for (final song in diff.toUpdate) {
+        final idx = _songIndexByPath[song.data];
+        if (idx != null && idx >= 0 && idx < _allSongs.length) {
+          _allSongs[idx] = song;
+        }
+      }
+    }
+
+    if (diff.toDelete.isNotEmpty) {
+      structureChanged = true;
+      final indicesToRemove = diff.toDelete
+          .map((path) => _songIndexByPath[path])
+          .whereType<int>()
+          .toList()
+        ..sort((a, b) => b.compareTo(a)); // descendente para no desplazar índices
+      for (final idx in indicesToRemove) {
+        if (idx >= 0 && idx < _allSongs.length) _allSongs.removeAt(idx);
+      }
+    }
+
+    if (diff.toInsert.isNotEmpty) {
+      structureChanged = true;
+      for (final song in diff.toInsert) {
+        // Búsqueda binaria para insertar en posición correcta (lista ya ordenada)
+        int lo = 0, hi = _allSongs.length - 1;
+        final name = song.displayName.toLowerCase();
+        while (lo <= hi) {
+          final mid = lo + (hi - lo) ~/ 2;
+          if (_allSongs[mid].displayName.toLowerCase().compareTo(name) < 0) {
+            lo = mid + 1;
+          } else {
+            hi = mid - 1;
+          }
+        }
+        _allSongs.insert(lo, song);
+      }
+    }
+
+    if (structureChanged) {
+      _rebuildSongIndex();
+    }
+
+    // ── 4. Colas activas: sólo si la estructura cambió ───────────────────
+    if (structureChanged) {
+      _globalQueue = List.from(_allSongs);
+      if (_playbackMode == PlaybackMode.global) {
+        _currentPlaylist = _globalQueue;
+      } else if (_playbackMode == PlaybackMode.folder && _activeFolderPath != null) {
+        _currentPlaylist = _allSongs
+            .where((s) => s.data.startsWith(_activeFolderPath!))
+            .toList();
+      }
+    }
+
+    // ── 5. Canción activa: sólo si fue borrada o si hubo cambio estructural
+    final currentPath = _currentSong?.data;
+    if (currentPath != null && diff.toDelete.contains(currentPath)) {
+      await stop();
+      _currentIndex = 0;
+      _currentSong = _currentPlaylist.isNotEmpty ? _currentPlaylist.first : null;
+    } else if (currentPath != null && structureChanged) {
+      _currentIndex = _currentPlaylist.indexWhere((s) => s.data == currentPath);
+      if (_currentIndex == -1) _currentIndex = 0;
+    }
+
+    // ── 6. Álbumes: sólo si se insertaron o borraron canciones ───────────
+    if (diff.toInsert.isNotEmpty || diff.toDelete.isNotEmpty) {
+      _allAlbums = await _audioQuery.queryAlbums();
+    }
+
+    syncStopwatch.stop();
+    debugPrint('[METRICS] === SYNC INCREMENTAL ===');
+    debugPrint('[METRICS] INSERT: ${diff.toInsert.length}');
+    debugPrint('[METRICS] UPDATE: ${diff.toUpdate.length}');
+    debugPrint('[METRICS] DELETE: ${diff.toDelete.length}');
+    debugPrint('[METRICS] SIN CAMBIOS: $unchanged');
+    debugPrint('[METRICS] Tiempo total: ${syncStopwatch.elapsedMilliseconds} ms');
+    debugPrint('[METRICS] ===================================');
+    return diff;
+  }
+
+  void _rebuildSongIndex() {
+    _songIndexByPath.clear();
+    for (var i = 0; i < _allSongs.length; i++) {
+      _songIndexByPath[_allSongs[i].data] = i;
     }
   }
 
-  Future<void> refreshLibrary() async {
+  Future<void> _indexSongsToDatabase() async {
+    if (_allSongs.isEmpty) return;
+    
+    // We already have fresh _allSongs from _applyFreshLibrary
+    // Persist to SQLite
+    await LibraryDatabase.instance.upsertSongs(
+      _allSongs.map((s) => s.getMap).toList(),
+    );
+  }
+
+  /// Refresca la biblioteca de forma incremental.
+  /// Retorna el [SyncResult] con el detalle de cambios, o null si no hubo.
+  Future<SyncResult?> refreshLibrary() async {
     _libraryRefreshDebounce?.cancel();
-    await _refreshLibraryFromDevice(showLoading: false);
+    _isSyncing = true;
+    notifyListeners();
+    return _refreshLibraryFromDevice(showLoading: false);
   }
 
   Future<void> _applyFreshLibrary(
@@ -269,6 +447,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     final previousSongId = _currentSong?.id;
     final freshIds = freshSongs.map((song) => song.id).toSet();
     _allSongs = freshSongs;
+    _rebuildSongIndex();
     _globalQueue = List.from(_allSongs);
     _allAlbums = freshAlbums;
     _favoriteIds.removeWhere((id) => !freshIds.contains(id));
@@ -354,6 +533,33 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  Future<bool> _restoreFromDatabase() async {
+    try {
+      final stopwatch = Stopwatch()..start();
+      
+      if (!await LibraryDatabase.instance.hasIndexedData) return false;
+
+      final songMaps = await LibraryDatabase.instance.getAllAsSongModelMaps();
+      if (songMaps.isEmpty) return false;
+
+      _allSongs = songMaps.map((songMap) => SongModel(songMap)).toList();
+      _rebuildSongIndex();
+      _globalQueue = List.from(_allSongs);
+      _currentPlaylist = _globalQueue;
+      
+      stopwatch.stop();
+      debugPrint('[METRICS] Tiempo de carga desde SQLite: ${stopwatch.elapsedMilliseconds} ms, Total de canciones: ${_allSongs.length}');
+      
+      // Note: Albums are currently still fetched via on_audio_query in the background refresh
+      // or loaded from JSON cache (until Phase 5 removes JSON cache).
+      
+      return true;
+    } catch (e) {
+      debugPrint('Error restoring from database: $e');
+      return false;
+    }
+  }
+
   Future<bool> _restoreLibraryCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -368,6 +574,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       if (songMaps.isEmpty) return false;
 
       _allSongs = songMaps.map((songMap) => SongModel(songMap)).toList();
+      _rebuildSongIndex();
       _globalQueue = List.from(_allSongs);
       _currentPlaylist = _globalQueue;
 

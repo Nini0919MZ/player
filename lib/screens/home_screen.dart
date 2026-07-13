@@ -29,26 +29,53 @@ class HomeScreen extends StatelessWidget {
                 );
               },
             ),
-            Selector<AudioProvider, bool>(
-              selector: (_, audioProvider) => audioProvider.isIndexing,
-              builder: (context, isIndexing, _) {
+            Selector<AudioProvider, ({bool isIndexing, bool isSyncing})>(
+              selector: (_, p) => (isIndexing: p.isIndexing, isSyncing: p.isSyncing),
+              builder: (context, state, _) {
                 return PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert),
+                  icon: state.isSyncing
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.more_vert),
                   onSelected: (value) async {
                     if (value != 'refresh_library') return;
-                    await context.read<AudioProvider>().refreshLibrary();
+                    final result =
+                        await context.read<AudioProvider>().refreshLibrary();
                     if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Biblioteca actualizada'),
-                        duration: Duration(seconds: 2),
-                      ),
-                    );
+                    if (result == null || !result.hasChanges) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Biblioteca ya actualizada.'),
+                          duration: Duration(seconds: 2),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    } else {
+                      final lines = <String>[];
+                      if (result.toInsert.isNotEmpty)
+                        lines.add('+ ${result.toInsert.length} agregadas');
+                      if (result.toUpdate.isNotEmpty)
+                        lines.add('~ ${result.toUpdate.length} modificadas');
+                      if (result.toDelete.isNotEmpty)
+                        lines.add('- ${result.toDelete.length} eliminadas');
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Biblioteca actualizada\n${lines.join("  ")}',
+                          ),
+                          duration: const Duration(seconds: 3),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
                   },
                   itemBuilder: (context) => [
                     PopupMenuItem<String>(
                       value: 'refresh_library',
-                      enabled: !isIndexing,
+                      enabled: !state.isIndexing && !state.isSyncing,
                       child: const Text('Refrescar carpetas/elementos'),
                     ),
                   ],
@@ -68,10 +95,14 @@ class HomeScreen extends StatelessWidget {
           children: [
             Consumer<AudioProvider>(
               builder: (context, audioProvider, _) {
-                if (!audioProvider.isIndexing || audioProvider.isLoading) {
-                  return const SizedBox.shrink();
+                if (audioProvider.isLoading) return const SizedBox.shrink();
+                if (audioProvider.isIndexing) {
+                  return _InlineIndexingBar(audioProvider: audioProvider);
                 }
-                return _InlineIndexingBar(audioProvider: audioProvider);
+                if (audioProvider.isSyncing) {
+                  return const _SyncingBanner();
+                }
+                return const SizedBox.shrink();
               },
             ),
             Expanded(
@@ -239,6 +270,35 @@ class _InlineIndexingBar extends StatelessWidget {
               color: const Color(0xFFFFD500),
               backgroundColor: const Color(0xFF303030),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SyncingBanner extends StatelessWidget {
+  const _SyncingBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      color: const Color(0xFF101010),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.5,
+              color: Color(0xFFFFD500),
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Text(
+            'Actualizando biblioteca...',
+            style: TextStyle(color: Colors.grey, fontSize: 12),
           ),
         ],
       ),

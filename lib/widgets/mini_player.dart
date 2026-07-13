@@ -35,7 +35,7 @@ class MiniPlayer extends StatelessWidget {
             showModalBottomSheet(
               context: context,
               isScrollControlled: true,
-              useSafeArea: false,
+              useSafeArea: true,
               backgroundColor: AppTheme.surfaceColor,
               shape: const RoundedRectangleBorder(
                   borderRadius:
@@ -233,7 +233,8 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
           statusBarBrightness: Brightness.dark,
         ),
         leading: IconButton(
-          icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 30),
+          icon: const Icon(Icons.keyboard_arrow_down,
+              color: Colors.white, size: 30),
           onPressed: () => Navigator.pop(context),
         ),
         centerTitle: true,
@@ -253,7 +254,8 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
             const SizedBox(height: 4),
             GestureDetector(
               onTap: () {
-                if (song.albumId != null) {
+                // Solo navegar a álbum si tiene uno real
+                if (song.albumId != null && _hasRealAlbum(song)) {
                   final albumSongs = audioProvider.allSongs
                       .where((s) => s.albumId == song.albumId)
                       .toList();
@@ -272,7 +274,7 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
-                  song.album ?? "Desconocido",
+                  _resolveAlbumLabel(song),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,
@@ -358,7 +360,7 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Colors.grey[900]!.withOpacity(0.8),
+              Colors.grey[900]!.withValues(alpha: 0.8),
               const Color(0xFF121212),
             ],
           ),
@@ -403,7 +405,7 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                           child: Center(
                             child: Icon(
                               Icons.music_note_rounded,
-                              color: Colors.white.withOpacity(0.15),
+                              color: Colors.white.withValues(alpha: 0.15),
                               size: 160,
                             ),
                           ),
@@ -711,5 +713,17 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
     final minutes = d.inMinutes.remainder(60).toString();
     final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$minutes:$seconds';
+  }
+
+  bool _hasRealAlbum(dynamic song) {
+    final album = song.album as String?;
+    if (album == null || album.isEmpty) return false;
+    final lower = album.toLowerCase();
+    return lower != '<unknown>' && lower != 'unknown album';
+  }
+
+  String _resolveAlbumLabel(dynamic song) {
+    if (_hasRealAlbum(song)) return song.album as String;
+    return 'Álbum desconocido';
   }
 }

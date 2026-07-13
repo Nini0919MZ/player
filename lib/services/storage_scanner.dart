@@ -99,6 +99,7 @@ class StorageScanner {
   static Future<List<SongModel>> filterSongs(
     List<SongModel> rawSongs, {
     void Function(StorageScanProgress progress)? onProgress,
+    Set<String>? knownPaths,
   }) async {
     List<SongModel> validSongs = [];
     Set<String> validDirs = {};
@@ -140,7 +141,8 @@ class StorageScanner {
       }
 
       final ext = song.fileExtension;
-      if (await isValidAudioFile(path, song.size, ext)) {
+      final isKnown = knownPaths?.contains(path) ?? false;
+      if (isKnown || await isValidAudioFile(path, song.size, ext)) {
         validSongs.add(song);
       }
 
