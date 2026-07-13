@@ -162,6 +162,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _init() async {
     await _requestInitialPermissions();
+    _isEpicenterEnabled = await StatePersistence.loadEpicenterEnabled();
 
     final restoredFromCache = await _restoreLibraryCache();
     if (restoredFromCache) {
@@ -193,6 +194,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _player.androidAudioSessionIdStream.listen((sessionId) async {
       if (sessionId != null && sessionId != 0) {
         await _mediaChannel.invokeMethod('setBypass', {'bypass': true});
+        await _mediaChannel.invokeMethod('toggle_epicenter', {
+          'enabled': _isEpicenterEnabled,
+        });
       }
     });
 
@@ -403,6 +407,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> toggleEpicenter() async {
     _isEpicenterEnabled = !_isEpicenterEnabled;
     notifyListeners();
+    await StatePersistence.saveEpicenterEnabled(_isEpicenterEnabled);
 
     try {
       await _mediaChannel.invokeMethod('toggle_epicenter', {
@@ -411,6 +416,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('Epicenter error: $e');
       _isEpicenterEnabled = false;
+      await StatePersistence.saveEpicenterEnabled(false);
       notifyListeners();
     }
   }
@@ -902,8 +908,17 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   List<String> get sortedFolderPaths =>
       StorageScanner.filterFolderPaths(_allSongs);
 
+  String _normalizeFolderPath(String filePath) {
+    var normalized = filePath.replaceAll('\\', '/');
+    while (normalized.endsWith('/')) {
+      normalized = normalized.substring(0, normalized.length - 1);
+    }
+    return normalized;
+  }
+
   String _getParentPathForString(String filePath) {
-    final parts = filePath.split('/');
+    final normalizedPath = _normalizeFolderPath(filePath);
+    final parts = normalizedPath.split('/');
     return parts.length > 1
         ? parts.sublist(0, parts.length - 1).join('/')
         : "Desconocido";
@@ -920,15 +935,21 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     final allFolders = sortedFolderPaths;
     if (allFolders.isEmpty) return;
 
-    String currentPath = _getParentPath(_currentSong!);
+    final normalizedFolders = allFolders.map(_normalizeFolderPath).toList();
+    final currentPath = _activeFolderPath != null
+        ? _normalizeFolderPath(_activeFolderPath!)
+        : _normalizeFolderPath(_getParentPath(_currentSong!));
 
-    final currentIndex = allFolders.indexWhere(
-      (path) => path == currentPath,
-    );
+    var currentIndex = normalizedFolders.indexOf(currentPath);
 
     if (currentIndex == -1) {
-      print("ERROR: Current folder not found");
-      return;
+      final currentSongParent = _normalizeFolderPath(_getParentPath(_currentSong!));
+      currentIndex = normalizedFolders.indexOf(currentSongParent);
+    }
+
+    if (currentIndex == -1) {
+      // Fallback: never leave folder controls inert.
+      currentIndex = offset > 0 ? -1 : 0;
     }
 
     final nextIndex = (currentIndex + offset) % allFolders.length;
@@ -937,18 +958,21 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     final nextFolderPath = allFolders[wrappedNextIndex];
     final folderSongs =
-        _allSongs.where((s) => _getParentPath(s) == nextFolderPath).toList();
+        _allSongs
+            .where((s) =>
+                _normalizeFolderPath(_getParentPath(s)) ==
+                _normalizeFolderPath(nextFolderPath))
+            .toList();
 
     if (folderSongs.isEmpty) {
       _activeFolderPath = nextFolderPath;
-      if (offset > 0) playNextFolder();
-      if (offset < 0) playPreviousFolder(playLastTrack: playLastTrack);
+      if (offset > 0) {
+        await playNextFolder();
+      } else if (offset < 0) {
+        await playPreviousFolder(playLastTrack: playLastTrack);
+      }
       return;
     }
-
-    print("Active folder: $_activeFolderPath");
-    print("All folders: $allFolders");
-    print("Current index: $currentIndex");
 
     await playFolderSongs(
       nextFolderPath,

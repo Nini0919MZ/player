@@ -26,7 +26,7 @@ Future<void> main() async {
     systemNavigationBarIconBrightness: Brightness.light,
   ));
 
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
   _initialAutoMode = await StatePersistence.loadAutoMode();
   await SystemChrome.setPreferredOrientations(

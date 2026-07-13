@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
@@ -13,6 +14,7 @@ import '../widgets/queue_bottom_sheet.dart';
 import '../widgets/song_info_modal.dart';
 import '../screens/artist_detail_screen.dart';
 import '../screens/album_detail_screen.dart';
+import '../services/state_persistence.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -33,6 +35,7 @@ class MiniPlayer extends StatelessWidget {
             showModalBottomSheet(
               context: context,
               isScrollControlled: true,
+              useSafeArea: false,
               backgroundColor: AppTheme.surfaceColor,
               shape: const RoundedRectangleBorder(
                   borderRadius:
@@ -157,8 +160,54 @@ class MiniPlayer extends StatelessWidget {
   }
 }
 
-class _PlayerModalContent extends StatelessWidget {
+class _PlayerModalContent extends StatefulWidget {
   const _PlayerModalContent();
+
+  @override
+  State<_PlayerModalContent> createState() => _PlayerModalContentState();
+}
+
+class _PlayerModalContentState extends State<_PlayerModalContent> {
+  bool _modoAuto = false;
+  bool _epicentro = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreferences();
+  }
+
+  Future<void> _loadPreferences() async {
+    final modoAuto = await StatePersistence.loadAutoMode();
+    final epicentro = await StatePersistence.loadEpicenterEnabled();
+    if (!mounted) return;
+    setState(() {
+      _modoAuto = modoAuto;
+      _epicentro = epicentro;
+    });
+
+    final audioProvider = context.read<AudioProvider>();
+    await audioProvider.setAutoMode(modoAuto);
+    if (audioProvider.isEpicenterEnabled != epicentro) {
+      await audioProvider.toggleEpicenter();
+    }
+  }
+
+  Future<void> _toggleModoAuto(AudioProvider audioProvider) async {
+    final nextValue = !_modoAuto;
+    setState(() => _modoAuto = nextValue);
+    await StatePersistence.saveAutoMode(nextValue);
+    await audioProvider.setAutoMode(nextValue);
+  }
+
+  Future<void> _toggleEpicentro(AudioProvider audioProvider) async {
+    final nextValue = !_epicentro;
+    setState(() => _epicentro = nextValue);
+    await StatePersistence.saveEpicenterEnabled(nextValue);
+    if (audioProvider.isEpicenterEnabled != nextValue) {
+      await audioProvider.toggleEpicenter();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -173,6 +222,136 @@ class _PlayerModalContent extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF121212),
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+        elevation: 0,
+        systemOverlayStyle: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 30),
+          onPressed: () => Navigator.pop(context),
+        ),
+        centerTitle: true,
+        title: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Text(
+              "REPRODUCIENDO DESDE",
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 10,
+                letterSpacing: 1.5,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            GestureDetector(
+              onTap: () {
+                if (song.albumId != null) {
+                  final albumSongs = audioProvider.allSongs
+                      .where((s) => s.albumId == song.albumId)
+                      .toList();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AlbumDetailScreen(
+                        albumName: song.album ?? "Unknown Album",
+                        albumId: song.albumId!,
+                        songs: albumSongs,
+                      ),
+                    ),
+                  );
+                }
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  song.album ?? "Desconocido",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.white, size: 26),
+            color: const Color(0xFF252525),
+            onSelected: (value) async {
+              if (value == 'modo_auto') {
+                await _toggleModoAuto(audioProvider);
+                return;
+              }
+              if (value == 'epicentro') {
+                await _toggleEpicentro(audioProvider);
+                return;
+              }
+              if (value == 'mas_opciones' && context.mounted) {
+                showOptionsMenu(context, audioProvider);
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'modo_auto',
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.directions_car_filled_rounded,
+                      size: 20,
+                      color: _modoAuto ? Colors.greenAccent : Colors.white,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      _modoAuto ? 'Modo Auto: ON' : 'Modo Auto: OFF',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'epicentro',
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.graphic_eq_rounded,
+                      size: 20,
+                      color: _epicentro ? Colors.greenAccent : Colors.white,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      _epicentro ? 'Epicentro: ON' : 'Epicentro: OFF',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'mas_opciones',
+                child: Row(
+                  children: [
+                    Icon(Icons.tune_rounded, size: 20, color: Colors.white),
+                    SizedBox(width: 10),
+                    Text('Más opciones', style: TextStyle(color: Colors.white)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -186,133 +365,47 @@ class _PlayerModalContent extends StatelessWidget {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 24.0),
         child: SafeArea(
+          top: false,
           child: Column(
             children: [
-              const SizedBox(height: 38),
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: IconButton(
-                      icon: const Icon(Icons.keyboard_arrow_down,
-                          color: Colors.white, size: 30),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        "REPRODUCIENDO DESDE",
-                        style: TextStyle(
-                          color: Colors.white54,
-                          fontSize: 10,
-                          letterSpacing: 1.5,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: () {
-                          if (song.albumId != null) {
-                            final albumSongs = audioProvider.allSongs
-                                .where((s) => s.albumId == song.albumId)
-                                .toList();
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => AlbumDetailScreen(
-                                  albumName: song.album ?? "Unknown Album",
-                                  albumId: song.albumId!,
-                                  songs: albumSongs,
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                        child: Text(
-                          song.album ?? "Desconocido",
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: Icon(
-                            Icons.graphic_eq_rounded,
-                            color: audioProvider.isEpicenterEnabled
-                                ? Colors.greenAccent
-                                : Colors.white,
-                            size: 26,
-                          ),
-                          tooltip: audioProvider.isEpicenterEnabled
-                              ? "Epicentro ON"
-                              : "Epicentro OFF",
-                          onPressed: audioProvider.toggleEpicenter,
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.directions_car_filled_rounded,
-                              color: Colors.white, size: 26),
-                          tooltip: "Modo Auto",
-                          onPressed: () => audioProvider.setAutoMode(true),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.more_vert,
-                              color: Colors.white, size: 26),
-                          onPressed: () =>
-                              showOptionsMenu(context, audioProvider),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const Spacer(flex: 2),
+              const Spacer(flex: 1),
               Expanded(
                 flex: 10,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: GestureDetector(
-                    onDoubleTap: () {
-                      final currentPos = audioProvider.player.position;
-                      audioProvider.player
-                          .seek(currentPos + const Duration(seconds: 10));
-                    },
-                    child: QueryArtworkWidget(
-                      id: song.id,
-                      type: ArtworkType.AUDIO,
-                      size: 1000,
-                      artworkHeight: double.infinity,
-                      artworkWidth: double.infinity,
-                      artworkFit: BoxFit.contain,
-                      nullArtworkWidget: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Colors.grey[800]!,
-                              Colors.grey[900]!,
-                              Colors.black,
-                            ],
+                child: ClipRect(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onDoubleTap: () {
+                        final currentPos = audioProvider.player.position;
+                        audioProvider.player
+                            .seek(currentPos + const Duration(seconds: 10));
+                      },
+                      child: QueryArtworkWidget(
+                        id: song.id,
+                        type: ArtworkType.AUDIO,
+                        size: 1000,
+                        artworkHeight: double.infinity,
+                        artworkWidth: double.infinity,
+                        artworkFit: BoxFit.contain,
+                        nullArtworkWidget: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Colors.grey[800]!,
+                                Colors.grey[900]!,
+                                Colors.black,
+                              ],
+                            ),
                           ),
-                        ),
-                        child: Center(
-                          child: Icon(
-                            Icons.music_note_rounded,
-                            color: Colors.white.withOpacity(0.15),
-                            size: 160,
+                          child: Center(
+                            child: Icon(
+                              Icons.music_note_rounded,
+                              color: Colors.white.withOpacity(0.15),
+                              size: 160,
+                            ),
                           ),
                         ),
                       ),
@@ -321,69 +414,81 @@ class _PlayerModalContent extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 15),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  IconButton(
-                    icon: Icon(
-                      Icons.shuffle,
-                      color: audioProvider.isShuffle
-                          ? Colors.greenAccent
-                          : Colors.white60,
-                      size: 24,
-                    ),
-                    onPressed: () => audioProvider.toggleShuffle(),
-                  ),
-                  IconButton(
-                    icon: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        const Icon(Icons.folder_outlined,
-                            color: Colors.white60, size: 24),
-                        Transform.translate(
-                          offset: const Offset(4, 4),
-                          child: const Icon(Icons.remove,
-                              color: Colors.white, size: 12),
+              Material(
+                type: MaterialType.transparency,
+                child: SizedBox(
+                  height: 48,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          Icons.shuffle,
+                          color: audioProvider.isShuffle
+                              ? Colors.greenAccent
+                              : Colors.white60,
+                          size: 24,
                         ),
-                      ],
-                    ),
-                    onPressed: audioProvider.playPreviousFolder,
-                    tooltip: "Carpeta anterior",
-                  ),
-                  IconButton(
-                    icon: Icon(
-                      audioProvider.loopMode == LoopMode.one
-                          ? Icons.repeat_one
-                          : Icons.repeat,
-                      color: audioProvider.loopMode != LoopMode.off
-                          ? Colors.greenAccent
-                          : Colors.white60,
-                      size: 24,
-                    ),
-                    onPressed: audioProvider.toggleLoop,
-                  ),
-                  IconButton(
-                    icon: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        const Icon(Icons.folder_outlined,
-                            color: Colors.white60, size: 24),
-                        Transform.translate(
-                          offset: const Offset(4, 4),
-                          child: const Icon(Icons.add,
-                              color: Colors.white, size: 12),
+                        onPressed: () => audioProvider.toggleShuffle(),
+                      ),
+                      IconButton(
+                        key: const ValueKey('now_playing_folder_previous'),
+                        icon: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            const Icon(Icons.folder_outlined,
+                                color: Colors.white60, size: 24),
+                            Transform.translate(
+                              offset: const Offset(4, 4),
+                              child: const Icon(Icons.remove,
+                                  color: Colors.white, size: 12),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    onPressed: audioProvider.playNextFolder,
-                    tooltip: "Carpeta siguiente",
+                        onPressed: () async {
+                          await audioProvider.playPreviousFolder();
+                        },
+                        tooltip: "Carpeta anterior",
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          audioProvider.loopMode == LoopMode.one
+                              ? Icons.repeat_one
+                              : Icons.repeat,
+                          color: audioProvider.loopMode != LoopMode.off
+                              ? Colors.greenAccent
+                              : Colors.white60,
+                          size: 24,
+                        ),
+                        onPressed: audioProvider.toggleLoop,
+                      ),
+                      IconButton(
+                        key: const ValueKey('now_playing_folder_next'),
+                        icon: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            const Icon(Icons.folder_outlined,
+                                color: Colors.white60, size: 24),
+                            Transform.translate(
+                              offset: const Offset(4, 4),
+                              child: const Icon(Icons.add,
+                                  color: Colors.white, size: 12),
+                            ),
+                          ],
+                        ),
+                        onPressed: () async {
+                          await audioProvider.playNextFolder();
+                        },
+                        tooltip: "Carpeta siguiente",
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.queue_music,
+                            color: Colors.white60, size: 24),
+                        onPressed: () => showQueueBottomSheet(context),
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.queue_music,
-                        color: Colors.white60, size: 24),
-                    onPressed: () => showQueueBottomSheet(context),
-                  ),
-                ],
+                ),
               ),
               const Spacer(flex: 2),
               Row(
@@ -577,7 +682,7 @@ class _PlayerModalContent extends StatelessWidget {
                   ),
                 ],
               ),
-              const Spacer(flex: 3),
+              const Spacer(flex: 2),
               Center(
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: 15.0),

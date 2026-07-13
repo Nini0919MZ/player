@@ -9,15 +9,34 @@ class StatePersistence {
   static const String _positionKey = 'position_ms';
   static const String _favoritesKey = 'favorites';
   static const String _autoModeKey = 'auto_mode_enabled';
+  static const String _legacyAutoModeKey = 'modo_auto';
+  static const String _epicenterEnabledKey = 'epicenter_enabled';
+  static const String _legacyEpicenterKey = 'epicentro';
 
   static Future<bool> loadAutoMode() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_autoModeKey) ?? false;
+    return prefs.getBool(_autoModeKey) ??
+        prefs.getBool(_legacyAutoModeKey) ??
+        false;
   }
 
   static Future<void> saveAutoMode(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_autoModeKey, enabled);
+    await prefs.setBool(_legacyAutoModeKey, enabled);
+  }
+
+  static Future<bool> loadEpicenterEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_epicenterEnabledKey) ??
+        prefs.getBool(_legacyEpicenterKey) ??
+        false;
+  }
+
+  static Future<void> saveEpicenterEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_epicenterEnabledKey, enabled);
+    await prefs.setBool(_legacyEpicenterKey, enabled);
   }
 
   static Future<void> savePlaybackState({

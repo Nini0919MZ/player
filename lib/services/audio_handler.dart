@@ -188,8 +188,10 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     int initialIndex,
     Duration initialPosition, {
     required bool shouldPlay,
-  }) {
-    return _serializePlaylistMutation(() async {
+  }) async {
+    var hasQueue = false;
+
+    await _serializePlaylistMutation(() async {
       // Safe Mode Switching: rebuild ConcatenatingAudioSource entirely to prevent caching bugs
       await _player.stop();
 
@@ -198,6 +200,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         mediaItem.add(null);
         return;
       }
+      hasQueue = true;
 
       final safeIndex = initialIndex.clamp(0, newQueue.length - 1);
       queue.add(newQueue);
@@ -210,12 +213,14 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       await _player.setAudioSource(_playlist,
           initialIndex: safeIndex, initialPosition: initialPosition);
 
-      if (shouldPlay) {
-        await _player.play();
-      } else {
+      if (!shouldPlay) {
         _broadcastState(_player.playbackEvent);
       }
     });
+
+    if (shouldPlay && hasQueue) {
+      await _player.play();
+    }
   }
 
   Future<void> _serializePlaylistMutation(
