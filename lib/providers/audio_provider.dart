@@ -207,7 +207,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     _handler.onTrackCompleted = () {
       if (_playbackMode == PlaybackMode.folder) {
-        playNextFolder();
+        unawaited(playNextFolder());
       }
     };
   }
@@ -321,6 +321,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
 
+    await _syncPlayerLoopMode();
     await _handler.replacePlaylist(
       await _songsToMediaItems(_currentPlaylist),
       _currentIndex,
@@ -602,6 +603,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     } else {
       _activeFolderPath = null;
     }
+    unawaited(_syncPlayerLoopMode());
     notifyListeners();
   }
 
@@ -686,6 +688,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _currentPlaylist = nextPlaylist;
     _currentIndex = nextIndex;
     _currentSong = _currentPlaylist[_currentIndex];
+    await _syncPlayerLoopMode();
     notifyListeners();
 
     if (canReuseCurrentQueue) {
@@ -708,6 +711,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     final mediaItems = await _songsToMediaItems(_currentPlaylist);
 
     try {
+      await _syncPlayerLoopMode();
       await _handler.loadPlaylist(mediaItems, _currentIndex);
       await _savePlaybackState();
       await _updateHomeWidget();
@@ -874,8 +878,23 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _loopMode = _loopMode == LoopMode.off
         ? LoopMode.all
         : (_loopMode == LoopMode.all ? LoopMode.one : LoopMode.off);
-    _player.setLoopMode(_loopMode);
+    unawaited(_syncPlayerLoopMode());
     notifyListeners();
+  }
+
+  LoopMode _effectivePlayerLoopMode() {
+    if (_playbackMode == PlaybackMode.folder && _loopMode == LoopMode.all) {
+      // In folder mode, LoopMode.all means cycling across folders, not
+      // looping only the current folder playlist at just_audio layer.
+      return LoopMode.off;
+    }
+    return _loopMode;
+  }
+
+  Future<void> _syncPlayerLoopMode() async {
+    final targetLoopMode = _effectivePlayerLoopMode();
+    if (_player.loopMode == targetLoopMode) return;
+    await _player.setLoopMode(targetLoopMode);
   }
 
   // --- Folder Management ---
@@ -1216,6 +1235,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         _currentIndex = index;
         _currentSong = _currentPlaylist[_currentIndex];
 
+        await _syncPlayerLoopMode();
         final mediaItems = await _songsToMediaItems(_currentPlaylist);
         await _handler.loadPlaylist(
             mediaItems, _currentIndex, Duration(milliseconds: positionMs));

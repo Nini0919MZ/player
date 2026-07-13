@@ -6,6 +6,7 @@ import 'dart:async';
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   late final AudioPlayer _player;
   ConcatenatingAudioSource _playlist = ConcatenatingAudioSource(children: []);
+  Future<void> _playlistMutation = Future.value();
 
   VoidCallback? onToggleFavorite;
   VoidCallback? onTrackCompleted;
@@ -67,10 +68,12 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     if (_player.hasNext) {
       _player.seekToNext();
     } else {
-      stop();
-      if (onTrackCompleted != null) {
-        onTrackCompleted!();
+      final onCompleted = onTrackCompleted;
+      if (onCompleted != null) {
+        onCompleted();
+        return;
       }
+      stop();
     }
   }
 
@@ -185,32 +188,42 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     int initialIndex,
     Duration initialPosition, {
     required bool shouldPlay,
-  }) async {
-    // Safe Mode Switching: rebuild ConcatenatingAudioSource entirely to prevent caching bugs
-    await _player.stop();
+  }) {
+    return _serializePlaylistMutation(() async {
+      // Safe Mode Switching: rebuild ConcatenatingAudioSource entirely to prevent caching bugs
+      await _player.stop();
 
-    if (newQueue.isEmpty) {
-      queue.add([]);
-      mediaItem.add(null);
-      return;
-    }
+      if (newQueue.isEmpty) {
+        queue.add([]);
+        mediaItem.add(null);
+        return;
+      }
 
-    final safeIndex = initialIndex.clamp(0, newQueue.length - 1);
-    queue.add(newQueue);
-    mediaItem.add(newQueue[safeIndex]);
+      final safeIndex = initialIndex.clamp(0, newQueue.length - 1);
+      queue.add(newQueue);
+      mediaItem.add(newQueue[safeIndex]);
 
-    _playlist = ConcatenatingAudioSource(
-        children: newQueue.map(_createAudioSource).toList());
+      _playlist = ConcatenatingAudioSource(
+          children: newQueue.map(_createAudioSource).toList());
 
-    // Explicitly set the initial index down at the native source creation!
-    await _player.setAudioSource(_playlist,
-        initialIndex: safeIndex, initialPosition: initialPosition);
+      // Explicitly set the initial index down at the native source creation!
+      await _player.setAudioSource(_playlist,
+          initialIndex: safeIndex, initialPosition: initialPosition);
 
-    if (shouldPlay) {
-      await _player.play();
-    } else {
-      _broadcastState(_player.playbackEvent);
-    }
+      if (shouldPlay) {
+        await _player.play();
+      } else {
+        _broadcastState(_player.playbackEvent);
+      }
+    });
+  }
+
+  Future<void> _serializePlaylistMutation(
+    Future<void> Function() operation,
+  ) {
+    final run = _playlistMutation.then((_) => operation());
+    _playlistMutation = run.catchError((_) {});
+    return run;
   }
 
   AudioSource _createAudioSource(MediaItem item) => AudioSource.uri(
