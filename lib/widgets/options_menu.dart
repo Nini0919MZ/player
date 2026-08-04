@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:audiotags/audiotags.dart';
 import 'package:image_picker/image_picker.dart';
 import '../providers/audio_provider.dart';
+import '../services/state_persistence.dart';
 import '../utils/title_utils.dart';
 
 void showOptionsMenu(BuildContext context, AudioProvider audioProvider) {
@@ -32,19 +33,50 @@ class _OptionsMenuContent extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           const SizedBox(height: 10),
-          Container(height: 4, width: 40, decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(2))),
+          Container(
+              height: 4,
+              width: 40,
+              decoration: BoxDecoration(
+                  color: Colors.grey[600],
+                  borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 20),
           ListTile(
-            leading: const Icon(Icons.edit_outlined, color: Colors.white, size: 28),
-            title: const Text("Editor de etiquetas", style: TextStyle(color: Colors.white, fontSize: 18)),
+            leading:
+                const Icon(Icons.edit_outlined, color: Colors.white, size: 28),
+            title: const Text("Editor de etiquetas",
+                style: TextStyle(color: Colors.white, fontSize: 18)),
             onTap: () {
               Navigator.pop(context);
-              showDialog(context: context, builder: (context) => _EditTagDialog(provider: audioProvider));
+              showDialog(
+                  context: context,
+                  builder: (context) =>
+                      _EditTagDialog(provider: audioProvider));
             },
           ),
           ListTile(
-            leading: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 28),
-            title: const Text("Eliminar del dispositivo", style: TextStyle(color: Colors.redAccent, fontSize: 18)),
+            leading: const Icon(Icons.graphic_eq_rounded,
+                color: Colors.white, size: 28),
+            title: const Text("Ajustes de Epicentro",
+                style: TextStyle(color: Colors.white, fontSize: 18)),
+            onTap: () {
+              Navigator.pop(context);
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: const Color(0xFF222222),
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                builder: (context) => _EpicenterSettingsSheet(
+                  audioProvider: audioProvider,
+                ),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline,
+                color: Colors.redAccent, size: 28),
+            title: const Text("Eliminar del dispositivo",
+                style: TextStyle(color: Colors.redAccent, fontSize: 18)),
             onTap: () {
               Navigator.pop(context);
               _showDeleteDialog(context, audioProvider);
@@ -64,10 +96,16 @@ class _OptionsMenuContent extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF222222),
-        title: const Text("Confirmar eliminación", style: TextStyle(color: Colors.white)),
-        content: Text("¿Eliminar '${TitleUtils.getDisplayTitle(song)}' del dispositivo?", style: const TextStyle(color: Colors.white70)),
+        title: const Text("Confirmar eliminación",
+            style: TextStyle(color: Colors.white)),
+        content: Text(
+            "¿Eliminar '${TitleUtils.getDisplayTitle(song)}' del dispositivo?",
+            style: const TextStyle(color: Colors.white70)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancelar", style: TextStyle(color: Colors.grey))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child:
+                  const Text("Cancelar", style: TextStyle(color: Colors.grey))),
           TextButton(
             onPressed: () async {
               Navigator.pop(ctx);
@@ -76,7 +114,9 @@ class _OptionsMenuContent extends StatelessWidget {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      success ? "Archivo eliminado correctamente." : "Error al eliminar. Verifica los permisos.",
+                      success
+                          ? "Archivo eliminado correctamente."
+                          : "Error al eliminar. Verifica los permisos.",
                       style: const TextStyle(color: Colors.white),
                     ),
                     backgroundColor: success ? Colors.black87 : Colors.red,
@@ -84,10 +124,210 @@ class _OptionsMenuContent extends StatelessWidget {
                 );
               }
             },
-            child: const Text("Eliminar", style: TextStyle(color: Colors.redAccent)),
+            child: const Text("Eliminar",
+                style: TextStyle(color: Colors.redAccent)),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _EpicenterSettingsSheet extends StatefulWidget {
+  final AudioProvider audioProvider;
+
+  const _EpicenterSettingsSheet({required this.audioProvider});
+
+  @override
+  State<_EpicenterSettingsSheet> createState() =>
+      _EpicenterSettingsSheetState();
+}
+
+class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
+  late double _sweepFreq;
+  late double _width;
+  late double _intensity;
+  late double _balance;
+  late double _volume;
+
+  @override
+  void initState() {
+    super.initState();
+    final provider = widget.audioProvider;
+    _sweepFreq = provider.epicenterSweepFreq;
+    _width = provider.epicenterWidth;
+    _intensity = provider.epicenterIntensity;
+    _balance = provider.epicenterBalance;
+    _volume = provider.epicenterVolume;
+  }
+
+  Future<void> _resetDefaults() async {
+    setState(() {
+      _sweepFreq = StatePersistence.defaultEpicenterSweepFreq;
+      _width = StatePersistence.defaultEpicenterWidth;
+      _intensity = StatePersistence.defaultEpicenterIntensity;
+      _balance = StatePersistence.defaultEpicenterBalance;
+      _volume = StatePersistence.defaultEpicenterVolume;
+    });
+    await widget.audioProvider.resetEpicenterSettingsToDefault();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: 4,
+              width: 40,
+              decoration: BoxDecoration(
+                color: Colors.grey[600],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Ajustes de Epicentro',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _ParamSlider(
+              label: 'Sweep Freq',
+              value: _sweepFreq,
+              min: 27,
+              max: 63,
+              unit: 'Hz',
+              onChanged: (value) {
+                setState(() => _sweepFreq = value);
+                widget.audioProvider.updateEpicenterSettings(sweepFreq: value);
+              },
+            ),
+            _ParamSlider(
+              label: 'Width',
+              value: _width,
+              min: 0,
+              max: 100,
+              unit: '%',
+              onChanged: (value) {
+                setState(() => _width = value);
+                widget.audioProvider.updateEpicenterSettings(width: value);
+              },
+            ),
+            _ParamSlider(
+              label: 'Intensity',
+              value: _intensity,
+              min: 0,
+              max: 100,
+              unit: '%',
+              onChanged: (value) {
+                setState(() => _intensity = value);
+                widget.audioProvider.updateEpicenterSettings(intensity: value);
+              },
+            ),
+            _ParamSlider(
+              label: 'Balance',
+              value: _balance,
+              min: 0,
+              max: 100,
+              unit: '%',
+              onChanged: (value) {
+                setState(() => _balance = value);
+                widget.audioProvider.updateEpicenterSettings(balance: value);
+              },
+            ),
+            _ParamSlider(
+              label: 'Volume',
+              value: _volume,
+              min: 0,
+              max: 100,
+              unit: '%',
+              onChanged: (value) {
+                setState(() => _volume = value);
+                widget.audioProvider.updateEpicenterSettings(volume: value);
+              },
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _resetDefaults,
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.white30),
+                    ),
+                    child: const Text(
+                      'Por defecto',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black,
+                    ),
+                    child: const Text('Cerrar'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ParamSlider extends StatelessWidget {
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final String unit;
+  final ValueChanged<double> onChanged;
+
+  const _ParamSlider({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.unit,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label,
+                style: const TextStyle(color: Colors.white70, fontSize: 14)),
+            Text(
+              '${value.toStringAsFixed(0)} $unit',
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+            ),
+          ],
+        ),
+        Slider(
+          value: value.clamp(min, max),
+          min: min,
+          max: max,
+          onChanged: onChanged,
+        ),
+      ],
     );
   }
 }
@@ -117,21 +357,31 @@ class _EditTagDialogState extends State<_EditTagDialog> {
   void initState() {
     super.initState();
     final song = widget.provider.currentSong!;
-    final artistText = (song.artist == "<unknown>" || song.artist == null) ? "" : song.artist!;
-    _title       = TextEditingController(text: TitleUtils.getDisplayTitle(song));
-    _album       = TextEditingController(text: song.album ?? "");
-    _artist      = TextEditingController(text: artistText);
+    final artistText =
+        (song.artist == "<unknown>" || song.artist == null) ? "" : song.artist!;
+    _title = TextEditingController(text: TitleUtils.getDisplayTitle(song));
+    _album = TextEditingController(text: song.album ?? "");
+    _artist = TextEditingController(text: artistText);
     _albumArtist = TextEditingController();
-    _composer    = TextEditingController();
-    _genre       = TextEditingController(text: song.genre ?? "");
+    _composer = TextEditingController();
+    _genre = TextEditingController(text: song.genre ?? "");
     // SongModel exposes `song.track` for tracking number
-    _year        = TextEditingController();
-    _track       = TextEditingController(text: song.track?.toString() ?? "");
+    _year = TextEditingController();
+    _track = TextEditingController(text: song.track?.toString() ?? "");
   }
 
   @override
   void dispose() {
-    for (final c in [_title, _album, _artist, _albumArtist, _composer, _genre, _year, _track]) c.dispose();
+    for (final c in [
+      _title,
+      _album,
+      _artist,
+      _albumArtist,
+      _composer,
+      _genre,
+      _year,
+      _track
+    ]) c.dispose();
     super.dispose();
   }
 
@@ -147,21 +397,32 @@ class _EditTagDialogState extends State<_EditTagDialog> {
       List<Picture> pics = [];
       if (_newCoverFile != null) {
         final bytes = await _newCoverFile!.readAsBytes();
-        pics = [Picture(bytes: bytes, pictureType: PictureType.coverFront, mimeType: MimeType.jpeg)];
+        pics = [
+          Picture(
+              bytes: bytes,
+              pictureType: PictureType.coverFront,
+              mimeType: MimeType.jpeg)
+        ];
       }
       final tag = Tag(
-        title:   _title.text.isEmpty ? null : _title.text,
-        album:   _album.text.isEmpty ? null : _album.text,
-        artist:  _artist.text.isEmpty ? null : _artist.text,
-        genre:   _genre.text.isEmpty ? null : _genre.text,
-        year:    int.tryParse(_year.text),
+        title: _title.text.isEmpty ? null : _title.text,
+        album: _album.text.isEmpty ? null : _album.text,
+        artist: _artist.text.isEmpty ? null : _artist.text,
+        genre: _genre.text.isEmpty ? null : _genre.text,
+        year: int.tryParse(_year.text),
         pictures: pics,
       );
       await AudioTags.write(song.data, tag);
       widget.provider.updateSongMetadata(_title.text, _artist.text);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Etiquetas guardadas en el archivo.", style: TextStyle(color: Colors.white)), backgroundColor: Colors.green));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Etiquetas guardadas en el archivo.",
+              style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.green));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error al guardar: $e", style: const TextStyle(color: Colors.white)), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text("Error al guardar: $e",
+              style: const TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red));
     }
   }
 
@@ -172,9 +433,12 @@ class _EditTagDialogState extends State<_EditTagDialog> {
         controller: ctrl,
         style: const TextStyle(color: Colors.white),
         decoration: InputDecoration(
-          labelText: label, labelStyle: const TextStyle(color: Colors.grey),
-          enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
-          focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
+          labelText: label,
+          labelStyle: const TextStyle(color: Colors.grey),
+          enabledBorder: const UnderlineInputBorder(
+              borderSide: BorderSide(color: Colors.white24)),
+          focusedBorder: const UnderlineInputBorder(
+              borderSide: BorderSide(color: Colors.white)),
         ),
       ),
     );
@@ -184,7 +448,8 @@ class _EditTagDialogState extends State<_EditTagDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       backgroundColor: const Color(0xFF2A2A2A),
-      title: const Text("Editor de etiquetas", style: TextStyle(color: Colors.white, fontSize: 22)),
+      title: const Text("Editor de etiquetas",
+          style: TextStyle(color: Colors.white, fontSize: 22)),
       contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
       content: SizedBox(
         width: double.maxFinite,
@@ -196,19 +461,29 @@ class _EditTagDialogState extends State<_EditTagDialog> {
               GestureDetector(
                 onTap: _pickCover,
                 child: Container(
-                  width: 100, height: 100,
+                  width: 100,
+                  height: 100,
                   margin: const EdgeInsets.symmetric(vertical: 12),
                   decoration: BoxDecoration(
                     color: Colors.grey[800],
                     borderRadius: BorderRadius.circular(8),
-                    image: _newCoverFile != null ? DecorationImage(image: FileImage(_newCoverFile!), fit: BoxFit.cover) : null,
+                    image: _newCoverFile != null
+                        ? DecorationImage(
+                            image: FileImage(_newCoverFile!), fit: BoxFit.cover)
+                        : null,
                   ),
                   child: _newCoverFile == null
-                      ? const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.add_photo_alternate_outlined, color: Colors.white60, size: 36),
-                          SizedBox(height: 4),
-                          Text("Cambiar imagen", style: TextStyle(color: Colors.white60, fontSize: 11), textAlign: TextAlign.center),
-                        ])
+                      ? const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                              Icon(Icons.add_photo_alternate_outlined,
+                                  color: Colors.white60, size: 36),
+                              SizedBox(height: 4),
+                              Text("Cambiar imagen",
+                                  style: TextStyle(
+                                      color: Colors.white60, fontSize: 11),
+                                  textAlign: TextAlign.center),
+                            ])
                       : null,
                 ),
               ),
@@ -219,14 +494,18 @@ class _EditTagDialogState extends State<_EditTagDialog> {
               _field(_composer, "Compositor"),
               _field(_genre, "Género"),
               _field(_year, "Año"),
-              _field(_track, "Track (4 para la pista 4 o 2004 para CD 2, pista 4)"),
+              _field(_track,
+                  "Track (4 para la pista 4 o 2004 para CD 2, pista 4)"),
               const SizedBox(height: 8),
             ],
           ),
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text("cancelar", style: TextStyle(color: Colors.grey))),
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child:
+                const Text("cancelar", style: TextStyle(color: Colors.grey))),
         ElevatedButton(
           onPressed: _save,
           style: ElevatedButton.styleFrom(backgroundColor: Colors.grey[700]),

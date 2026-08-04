@@ -41,6 +41,15 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _isEqEnabled = true;
   bool _isReverbEnabled = false;
   bool _isEpicenterEnabled = false;
+  // Epicenter parameters (defaults mirror native defaults)
+  double _epicenterSweepFreq =
+      StatePersistence.defaultEpicenterSweepFreq; // Hz (27-63)
+  double _epicenterWidth = StatePersistence.defaultEpicenterWidth; // 0-100
+  double _epicenterIntensity =
+      StatePersistence.defaultEpicenterIntensity; // 0-100
+  double _epicenterBalance = StatePersistence.defaultEpicenterBalance; // 0-100
+  double _epicenterVolume = StatePersistence.defaultEpicenterVolume; // 0-100
+
   double _reverbDecay = 8.0;
   double _reverbPreDelay = 0.1;
   double _reverbRoomSize = 0.85;
@@ -100,11 +109,19 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Set<int> get favoriteIds => _favoriteIds;
   bool get isSyncing => _isSyncing;
 
-  // Concert Hall Getters
+  // Concert Hall / Epicenter Getters
   AudioPreset get currentPreset => _currentPreset;
   bool get isEqEnabled => _isEqEnabled;
   bool get isReverbEnabled => _isReverbEnabled;
   bool get isEpicenterEnabled => _isEpicenterEnabled;
+
+  // Epicenter params
+  double get epicenterSweepFreq => _epicenterSweepFreq;
+  double get epicenterWidth => _epicenterWidth;
+  double get epicenterIntensity => _epicenterIntensity;
+  double get epicenterBalance => _epicenterBalance;
+  double get epicenterVolume => _epicenterVolume;
+
   double get reverbDecay => _reverbDecay;
   double get reverbPreDelay => _reverbPreDelay;
   double get reverbRoomSize => _reverbRoomSize;
@@ -168,6 +185,19 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _init() async {
     await _requestInitialPermissions();
     _isEpicenterEnabled = await StatePersistence.loadEpicenterEnabled();
+
+    // Load persisted epicenter params (apply defaults if missing)
+    try {
+      final params = await StatePersistence.loadEpicenterParams();
+      _epicenterSweepFreq = params['sweepFreq'] ?? _epicenterSweepFreq;
+      _epicenterWidth = params['width'] ?? _epicenterWidth;
+      _epicenterIntensity = params['intensity'] ?? _epicenterIntensity;
+      _epicenterBalance = params['balance'] ?? _epicenterBalance;
+      _epicenterVolume = params['volume'] ?? _epicenterVolume;
+    } catch (e) {
+      debugPrint('Error loading epicenter params: $e');
+    }
+
     _hasFinishedStartup = true;
     _ignoreMediaChangesUntil = DateTime.now().add(const Duration(seconds: 3));
 
@@ -180,7 +210,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       await _loadPlaybackState();
       _scheduleLibraryRefresh(); // Trigger full refresh in background
     } else {
-      print('[SQL] No se encontraron datos en SQLite. Intentando caché JSON...');
+      print(
+          '[SQL] No se encontraron datos en SQLite. Intentando caché JSON...');
       // Fallback si SQLite está vacío (Primer inicio)
       final restoredFromCache = await _restoreLibraryCache();
       if (restoredFromCache) {
@@ -189,7 +220,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         notifyListeners();
         await _loadPlaybackState();
       } else {
-        print('[SQL] Cargando biblioteca desde el dispositivo por primera vez...');
+        print(
+            '[SQL] Cargando biblioteca desde el dispositivo por primera vez...');
         await _refreshLibraryFromDevice(showLoading: true);
         await _loadPlaybackState();
       }
@@ -216,6 +248,18 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         await _mediaChannel.invokeMethod('toggle_epicenter', {
           'enabled': _isEpicenterEnabled,
         });
+        // Apply persisted epicenter params when audio session becomes ready
+        try {
+          await setEpicenterParams(
+            sweepFreq: _epicenterSweepFreq,
+            width: _epicenterWidth,
+            intensity: _epicenterIntensity,
+            balance: _epicenterBalance,
+            volume: _epicenterVolume,
+          );
+        } catch (e) {
+          debugPrint('Error applying epicenter params to native: $e');
+        }
       }
     });
 
@@ -237,7 +281,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Refresco completamente incremental.
   /// Retorna un [SyncResult] con el detalle de cambios, o null si no hubo cambios.
-  Future<SyncResult?> _refreshLibraryFromDevice({required bool showLoading}) async {
+  Future<SyncResult?> _refreshLibraryFromDevice(
+      {required bool showLoading}) async {
     if (_isRefreshingLibrary) return null;
     _isRefreshingLibrary = true;
 
@@ -310,11 +355,13 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     if (!diff.hasChanges) {
       syncStopwatch.stop();
-      debugPrint('[METRICS] === SYNC INCREMENTAL: SIN CAMBIOS (${freshSongs.length} canciones, ${syncStopwatch.elapsedMilliseconds} ms) ===');
+      debugPrint(
+          '[METRICS] === SYNC INCREMENTAL: SIN CAMBIOS (${freshSongs.length} canciones, ${syncStopwatch.elapsedMilliseconds} ms) ===');
       return null;
     }
 
-    final unchanged = freshSongs.length - diff.toInsert.length - diff.toUpdate.length;
+    final unchanged =
+        freshSongs.length - diff.toInsert.length - diff.toUpdate.length;
 
     // ── 2. SQLite: solo operaciones necesarias ───────────────────────────
     // Usamos deleteByPaths (diff ya calculado) — sin segunda consulta SELECT.
@@ -346,7 +393,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
           .map((path) => _songIndexByPath[path])
           .whereType<int>()
           .toList()
-        ..sort((a, b) => b.compareTo(a)); // descendente para no desplazar índices
+        ..sort(
+            (a, b) => b.compareTo(a)); // descendente para no desplazar índices
       for (final idx in indicesToRemove) {
         if (idx >= 0 && idx < _allSongs.length) _allSongs.removeAt(idx);
       }
@@ -379,7 +427,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       _globalQueue = List.from(_allSongs);
       if (_playbackMode == PlaybackMode.global) {
         _currentPlaylist = _globalQueue;
-      } else if (_playbackMode == PlaybackMode.folder && _activeFolderPath != null) {
+      } else if (_playbackMode == PlaybackMode.folder &&
+          _activeFolderPath != null) {
         _currentPlaylist = _allSongs
             .where((s) => s.data.startsWith(_activeFolderPath!))
             .toList();
@@ -391,7 +440,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (currentPath != null && diff.toDelete.contains(currentPath)) {
       await stop();
       _currentIndex = 0;
-      _currentSong = _currentPlaylist.isNotEmpty ? _currentPlaylist.first : null;
+      _currentSong =
+          _currentPlaylist.isNotEmpty ? _currentPlaylist.first : null;
     } else if (currentPath != null && structureChanged) {
       _currentIndex = _currentPlaylist.indexWhere((s) => s.data == currentPath);
       if (_currentIndex == -1) _currentIndex = 0;
@@ -408,7 +458,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     debugPrint('[METRICS] UPDATE: ${diff.toUpdate.length}');
     debugPrint('[METRICS] DELETE: ${diff.toDelete.length}');
     debugPrint('[METRICS] SIN CAMBIOS: $unchanged');
-    debugPrint('[METRICS] Tiempo total: ${syncStopwatch.elapsedMilliseconds} ms');
+    debugPrint(
+        '[METRICS] Tiempo total: ${syncStopwatch.elapsedMilliseconds} ms');
     debugPrint('[METRICS] ===================================');
     return diff;
   }
@@ -422,7 +473,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _indexSongsToDatabase() async {
     if (_allSongs.isEmpty) return;
-    
+
     // We already have fresh _allSongs from _applyFreshLibrary
     // Persist to SQLite
     await LibraryDatabase.instance.upsertSongs(
@@ -536,7 +587,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<bool> _restoreFromDatabase() async {
     try {
       final stopwatch = Stopwatch()..start();
-      
+
       if (!await LibraryDatabase.instance.hasIndexedData) return false;
 
       final songMaps = await LibraryDatabase.instance.getAllAsSongModelMaps();
@@ -546,13 +597,14 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       _rebuildSongIndex();
       _globalQueue = List.from(_allSongs);
       _currentPlaylist = _globalQueue;
-      
+
       stopwatch.stop();
-      debugPrint('[METRICS] Tiempo de carga desde SQLite: ${stopwatch.elapsedMilliseconds} ms, Total de canciones: ${_allSongs.length}');
-      
+      debugPrint(
+          '[METRICS] Tiempo de carga desde SQLite: ${stopwatch.elapsedMilliseconds} ms, Total de canciones: ${_allSongs.length}');
+
       // Note: Albums are currently still fetched via on_audio_query in the background refresh
       // or loaded from JSON cache (until Phase 5 removes JSON cache).
-      
+
       return true;
     } catch (e) {
       debugPrint('Error restoring from database: $e');
@@ -642,6 +694,59 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       if (balance != null) 'balance': balance,
       if (volume != null) 'volume': volume,
     });
+  }
+
+  /// Update local epicenter settings, persist them and apply to native DSP.
+  Future<void> updateEpicenterSettings({
+    double? sweepFreq,
+    double? width,
+    double? intensity,
+    double? balance,
+    double? volume,
+  }) async {
+    if (sweepFreq != null) _epicenterSweepFreq = sweepFreq;
+    if (width != null) _epicenterWidth = width;
+    if (intensity != null) _epicenterIntensity = intensity;
+    if (balance != null) _epicenterBalance = balance;
+    if (volume != null) _epicenterVolume = volume;
+
+    notifyListeners();
+
+    // Persist all values
+    try {
+      await StatePersistence.saveEpicenterParams(
+        sweepFreq: _epicenterSweepFreq,
+        width: _epicenterWidth,
+        intensity: _epicenterIntensity,
+        balance: _epicenterBalance,
+        volume: _epicenterVolume,
+      );
+    } catch (e) {
+      debugPrint('Error saving epicenter params: $e');
+    }
+
+    // Apply to native DSP
+    try {
+      await setEpicenterParams(
+        sweepFreq: _epicenterSweepFreq,
+        width: _epicenterWidth,
+        intensity: _epicenterIntensity,
+        balance: _epicenterBalance,
+        volume: _epicenterVolume,
+      );
+    } catch (e) {
+      debugPrint('Error applying epicenter params to native: $e');
+    }
+  }
+
+  Future<void> resetEpicenterSettingsToDefault() async {
+    await updateEpicenterSettings(
+      sweepFreq: StatePersistence.defaultEpicenterSweepFreq,
+      width: StatePersistence.defaultEpicenterWidth,
+      intensity: StatePersistence.defaultEpicenterIntensity,
+      balance: StatePersistence.defaultEpicenterBalance,
+      volume: StatePersistence.defaultEpicenterVolume,
+    );
   }
 
   Future<void> _applyCurrentEffects() async {
@@ -1150,7 +1255,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     var currentIndex = normalizedFolders.indexOf(currentPath);
 
     if (currentIndex == -1) {
-      final currentSongParent = _normalizeFolderPath(_getParentPath(_currentSong!));
+      final currentSongParent =
+          _normalizeFolderPath(_getParentPath(_currentSong!));
       currentIndex = normalizedFolders.indexOf(currentSongParent);
     }
 
@@ -1164,12 +1270,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         nextIndex < 0 ? nextIndex + allFolders.length : nextIndex;
 
     final nextFolderPath = allFolders[wrappedNextIndex];
-    final folderSongs =
-        _allSongs
-            .where((s) =>
-                _normalizeFolderPath(_getParentPath(s)) ==
-                _normalizeFolderPath(nextFolderPath))
-            .toList();
+    final folderSongs = _allSongs
+        .where((s) =>
+            _normalizeFolderPath(_getParentPath(s)) ==
+            _normalizeFolderPath(nextFolderPath))
+        .toList();
 
     if (folderSongs.isEmpty) {
       _activeFolderPath = nextFolderPath;

@@ -3,6 +3,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 enum PlaybackMode { folder, global }
 
 class StatePersistence {
+  static const double defaultEpicenterSweepFreq = 45.0;
+  static const double defaultEpicenterWidth = 50.0;
+  static const double defaultEpicenterIntensity = 50.0;
+  static const double defaultEpicenterBalance = 50.0;
+  static const double defaultEpicenterVolume = 100.0;
+
   static const String _modeKey = 'playback_mode';
   static const String _folderPathKey = 'active_folder_path';
   static const String _songPathKey = 'current_song_path';
@@ -37,6 +43,42 @@ class StatePersistence {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_epicenterEnabledKey, enabled);
     await prefs.setBool(_legacyEpicenterKey, enabled);
+  }
+
+  // Epicenter parameters persistence
+  static const String _epicenterSweepFreqKey = 'epicenter_sweep_freq';
+  static const String _epicenterWidthKey = 'epicenter_width';
+  static const String _epicenterIntensityKey = 'epicenter_intensity';
+  static const String _epicenterBalanceKey = 'epicenter_balance';
+  static const String _epicenterVolumeKey = 'epicenter_volume';
+
+  static Future<Map<String, double>> loadEpicenterParams() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      'sweepFreq':
+          prefs.getDouble(_epicenterSweepFreqKey) ?? defaultEpicenterSweepFreq,
+      'width': prefs.getDouble(_epicenterWidthKey) ?? defaultEpicenterWidth,
+      'intensity':
+          prefs.getDouble(_epicenterIntensityKey) ?? defaultEpicenterIntensity,
+      'balance':
+          prefs.getDouble(_epicenterBalanceKey) ?? defaultEpicenterBalance,
+      'volume': prefs.getDouble(_epicenterVolumeKey) ?? defaultEpicenterVolume,
+    };
+  }
+
+  static Future<void> saveEpicenterParams({
+    required double sweepFreq,
+    required double width,
+    required double intensity,
+    required double balance,
+    required double volume,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_epicenterSweepFreqKey, sweepFreq);
+    await prefs.setDouble(_epicenterWidthKey, width);
+    await prefs.setDouble(_epicenterIntensityKey, intensity);
+    await prefs.setDouble(_epicenterBalanceKey, balance);
+    await prefs.setDouble(_epicenterVolumeKey, volume);
   }
 
   static Future<void> savePlaybackState({
