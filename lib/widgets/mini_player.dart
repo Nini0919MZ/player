@@ -216,9 +216,7 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
 
     if (song == null) return const SizedBox.shrink();
 
-    final artista = (song.artist == null || song.artist == "<unknown>")
-        ? "Artista Desconocido"
-        : song.artist!;
+    final artista = TitleUtils.getDisplayArtist(song.artist);
 
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
@@ -254,22 +252,25 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
             const SizedBox(height: 4),
             GestureDetector(
               onTap: () {
-                // Solo navegar a álbum si tiene uno real
-                if (song.albumId != null && _hasRealAlbum(song)) {
-                  final albumSongs = audioProvider.allSongs
-                      .where((s) => s.albumId == song.albumId)
-                      .toList();
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => AlbumDetailScreen(
-                        albumName: song.album ?? "Unknown Album",
-                        albumId: song.albumId!,
-                        songs: albumSongs,
-                      ),
+                final albumSongs = audioProvider.allSongs
+                    .where(
+                      (s) =>
+                          TitleUtils.getAlbumKey(s) ==
+                          TitleUtils.getAlbumKey(song),
+                    )
+                    .toList();
+                if (albumSongs.isEmpty) return;
+
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AlbumDetailScreen(
+                      albumName: _resolveAlbumLabel(song),
+                      albumId: song.albumId ?? 0,
+                      songs: albumSongs,
                     ),
-                  );
-                }
+                  ),
+                );
               },
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -519,13 +520,16 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                         const SizedBox(height: 6),
                         GestureDetector(
                           onTap: () {
-                            final artistName = (song.artist == null ||
-                                    song.artist == "<unknown>")
-                                ? "Artista Desconocido"
-                                : song.artist!;
+                            final artistName =
+                                TitleUtils.getDisplayArtist(song.artist);
+                            final artistKey =
+                                TitleUtils.getArtistKey(song.artist);
                             final artistSongs = audioProvider.allSongs
-                                .where((s) => s.artist == song.artist)
+                                .where((s) =>
+                                    TitleUtils.getArtistKey(s.artist) ==
+                                    artistKey)
                                 .toList();
+                            if (artistSongs.isEmpty) return;
                             Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -715,15 +719,7 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
     return '$minutes:$seconds';
   }
 
-  bool _hasRealAlbum(dynamic song) {
-    final album = song.album as String?;
-    if (album == null || album.isEmpty) return false;
-    final lower = album.toLowerCase();
-    return lower != '<unknown>' && lower != 'unknown album';
-  }
-
   String _resolveAlbumLabel(dynamic song) {
-    if (_hasRealAlbum(song)) return song.album as String;
-    return 'Álbum desconocido';
+    return TitleUtils.getDisplayAlbum(song as SongModel);
   }
 }

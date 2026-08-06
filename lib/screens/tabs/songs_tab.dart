@@ -30,7 +30,7 @@ class _SongsTabState extends State<SongsTab> {
     for (int i = 0; i < songs.length; i++) {
       String title = TitleUtils.getDisplayTitle(songs[i]).trim();
       if (title.isEmpty) continue;
-      
+
       String firstLetter = title[0].toUpperCase();
       if (!RegExp(r'[A-Z]').hasMatch(firstLetter)) {
         if (!map.containsKey("#")) map["#"] = i;
@@ -66,11 +66,14 @@ class _SongsTabState extends State<SongsTab> {
     }
   }
 
-  void _handleScroll(Offset localPosition, double sidebarHeight, List<SongModel> songs) {
+  void _handleScroll(
+      Offset localPosition, double sidebarHeight, List<SongModel> songs) {
     final double y = localPosition.dy;
-    final int letterIndex = ((y / sidebarHeight) * _alphabet.length).floor().clamp(0, _alphabet.length - 1);
+    final int letterIndex = ((y / sidebarHeight) * _alphabet.length)
+        .floor()
+        .clamp(0, _alphabet.length - 1);
     final String letter = _alphabet[letterIndex];
-    
+
     if (_draggedLetter != letter) {
       setState(() => _draggedLetter = letter);
       _scrollToLetter(letter, songs);
@@ -86,115 +89,126 @@ class _SongsTabState extends State<SongsTab> {
     }
 
     final songs = List<SongModel>.from(audioProvider.allSongs)
-      ..sort((a, b) => TitleUtils.getDisplayTitle(a).toLowerCase().compareTo(TitleUtils.getDisplayTitle(b).toLowerCase()));
+      ..sort((a, b) => TitleUtils.getDisplayTitle(a)
+          .toLowerCase()
+          .compareTo(TitleUtils.getDisplayTitle(b).toLowerCase()));
 
     if (songs.isEmpty) {
       return const Center(child: Text("No se encontraron canciones"));
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Stack(
-          children: [
-            ListView.builder(
-              controller: _scrollController,
-              itemCount: songs.length,
-              itemExtent: 64.0,
-              itemBuilder: (context, index) {
-                final song = songs[index];
-                final isSelected = audioProvider.currentSong?.id == song.id;
+    return LayoutBuilder(builder: (context, constraints) {
+      return Stack(
+        children: [
+          ListView.builder(
+            controller: _scrollController,
+            itemCount: songs.length,
+            itemExtent: 64.0,
+            itemBuilder: (context, index) {
+              final song = songs[index];
+              final isSelected = audioProvider.currentSong?.id == song.id;
 
-                return Dismissible(
-                  key: ValueKey(song.id),
-                  direction: DismissDirection.endToStart,
-                  background: Container(
-                    alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.only(right: 20.0),
-                    color: Colors.red,
-                    child: const Icon(Icons.delete, color: Colors.white),
-                  ),
-                  confirmDismiss: (direction) async {
-                    return await _showDeleteConfirmation(context, song, audioProvider);
+              return Dismissible(
+                key: ValueKey('${song.id}_${song.data}'),
+                direction: DismissDirection.endToStart,
+                background: Container(
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.only(right: 20.0),
+                  color: Colors.red,
+                  child: const Icon(Icons.delete, color: Colors.white),
+                ),
+                confirmDismiss: (direction) async {
+                  return await _showDeleteConfirmation(
+                      context, song, audioProvider);
+                },
+                onDismissed: (direction) {
+                  // Actual deletion is handled in confirmDismiss to show SnackBar
+                  // or here if we want to be sure it's removed from local UI first.
+                },
+                child: SongListTile(
+                  song: song,
+                  isSelected: isSelected,
+                  onTap: () {
+                    audioProvider.playPlaylist(songs, index);
                   },
-                  onDismissed: (direction) {
-                    // Actual deletion is handled in confirmDismiss to show SnackBar
-                    // or here if we want to be sure it's removed from local UI first.
-                  },
-                  child: SongListTile(
-                    song: song,
-                    isSelected: isSelected,
-                    onTap: () {
-                      audioProvider.playPlaylist(songs, index);
-                    },
-                  ),
-                );
-              },
-            ),
-            
-            // Alphabet Sidebar
-            Positioned(
-              right: 0,
-              top: 20,
-              bottom: 20,
-              width: 30,
-              child: GestureDetector(
-                onVerticalDragStart: (details) => _handleScroll(details.localPosition, constraints.maxHeight - 40, songs),
-                onVerticalDragUpdate: (details) => _handleScroll(details.localPosition, constraints.maxHeight - 40, songs),
-                onVerticalDragEnd: (_) => setState(() => _draggedLetter = null),
-                onTapDown: (details) => _handleScroll(details.localPosition, constraints.maxHeight - 40, songs),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black26,
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: _alphabet.map((letter) {
-                      bool isDragging = _draggedLetter == letter;
-                      return Text(
-                        letter,
-                        style: TextStyle(
-                          color: isDragging ? AppTheme.primaryColor : Colors.white60, 
-                          fontSize: isDragging ? 13 : 9, 
-                          fontWeight: isDragging ? FontWeight.bold : FontWeight.normal
-                        ),
-                      );
-                    }).toList(),
-                  ),
+                ),
+              );
+            },
+          ),
+
+          // Alphabet Sidebar
+          Positioned(
+            right: 0,
+            top: 20,
+            bottom: 20,
+            width: 30,
+            child: GestureDetector(
+              onVerticalDragStart: (details) => _handleScroll(
+                  details.localPosition, constraints.maxHeight - 40, songs),
+              onVerticalDragUpdate: (details) => _handleScroll(
+                  details.localPosition, constraints.maxHeight - 40, songs),
+              onVerticalDragEnd: (_) => setState(() => _draggedLetter = null),
+              onTapDown: (details) => _handleScroll(
+                  details.localPosition, constraints.maxHeight - 40, songs),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: _alphabet.map((letter) {
+                    bool isDragging = _draggedLetter == letter;
+                    return Text(
+                      letter,
+                      style: TextStyle(
+                          color: isDragging
+                              ? AppTheme.primaryColor
+                              : Colors.white60,
+                          fontSize: isDragging ? 13 : 9,
+                          fontWeight:
+                              isDragging ? FontWeight.bold : FontWeight.normal),
+                    );
+                  }).toList(),
                 ),
               ),
             ),
+          ),
 
-            // Letter Overlay Indicator
-            if (_draggedLetter != null)
-              Center(
-                child: Container(
-                  height: 100,
-                  width: 100,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: Colors.black87,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppTheme.primaryColor, width: 2),
-                  ),
-                  child: Text(
-                    _draggedLetter!,
-                    style: const TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.bold),
-                  ),
+          // Letter Overlay Indicator
+          if (_draggedLetter != null)
+            Center(
+              child: Container(
+                height: 100,
+                width: 100,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.black87,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppTheme.primaryColor, width: 2),
+                ),
+                child: Text(
+                  _draggedLetter!,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 40,
+                      fontWeight: FontWeight.bold),
                 ),
               ),
-          ],
-        );
-      }
-    );
+            ),
+        ],
+      );
+    });
   }
 
-  Future<bool> _showDeleteConfirmation(BuildContext context, SongModel song, AudioProvider provider) async {
+  Future<bool> _showDeleteConfirmation(
+      BuildContext context, SongModel song, AudioProvider provider) async {
     final bool? confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text("Eliminar canción", style: TextStyle(color: Colors.white)),
+        title: const Text("Eliminar canción",
+            style: TextStyle(color: Colors.white)),
         content: Text(
           "¿Estás seguro de que quieres eliminar '${TitleUtils.getDisplayTitle(song)}' permanentemente?",
           style: const TextStyle(color: Colors.grey),

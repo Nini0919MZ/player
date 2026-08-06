@@ -100,14 +100,8 @@ class _CarModeControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final album = (song.album == null ||
-            song.album!.trim().isEmpty ||
-            song.album == '<unknown>')
-        ? 'Álbum desconocido'
-        : song.album!.trim();
-    final artist = (song.artist == null || song.artist == '<unknown>')
-        ? 'Artista desconocido'
-        : song.artist!;
+    final album = TitleUtils.getDisplayAlbum(song);
+    final artist = TitleUtils.getDisplayArtist(song.artist);
     final folder = _folderName(song.data);
 
     return LayoutBuilder(

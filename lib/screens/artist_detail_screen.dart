@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 import '../providers/audio_provider.dart';
+import '../utils/title_utils.dart';
+import 'album_detail_screen.dart';
 
 String _fmt(Duration d) {
   final h = d.inHours;
@@ -24,12 +26,17 @@ class ArtistDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context, listen: false);
 
-    // Agrupa canciones por álbum
-    final Map<int?, List<SongModel>> byAlbum = {};
+    // Agrupa canciones por álbum, con fallback por nombre cuando albumId no existe.
+    final Map<String, List<SongModel>> byAlbum = {};
     for (final s in songs) {
-      byAlbum.putIfAbsent(s.albumId, () => []).add(s);
+      byAlbum.putIfAbsent(TitleUtils.getAlbumKey(s), () => []).add(s);
     }
-    final albumIds = byAlbum.keys.toList();
+    final groupedAlbums = byAlbum.values.toList();
+    final albumArtworkIds = groupedAlbums
+        .map((group) => group.first.albumId)
+        .whereType<int>()
+        .toSet()
+        .toList();
 
     final totalMs = songs.fold<int>(0, (sum, s) => sum + (s.duration ?? 0));
     final totalDuration = Duration(milliseconds: totalMs);
@@ -59,8 +66,8 @@ class ArtistDetailScreen extends StatelessWidget {
               background: _ArtistHeader(
                 artistName: artistName,
                 songs: songs,
-                albumIds: albumIds,
-                albumCount: albumIds.length,
+                albumArtworkIds: albumArtworkIds,
+                albumCount: groupedAlbums.length,
                 totalDuration: totalDuration,
               ),
             ),
@@ -93,7 +100,7 @@ class ArtistDetailScreen extends StatelessWidget {
           ),
 
           // ── Sección Álbumes (scroll horizontal) ────────────────────────
-          if (albumIds.isNotEmpty) ...[
+          if (groupedAlbums.isNotEmpty) ...[
             const SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -110,13 +117,25 @@ class ArtistDetailScreen extends StatelessWidget {
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  itemCount: albumIds.length,
+                  itemCount: groupedAlbums.length,
                   itemBuilder: (ctx, i) {
-                    final albumId = albumIds[i];
-                    final albumSongs = byAlbum[albumId]!;
-                    final albumName = albumSongs.first.album ?? 'Álbum';
+                    final albumSongs = groupedAlbums[i];
+                    final albumId = albumSongs.first.albumId;
+                    final albumName =
+                        TitleUtils.getDisplayAlbum(albumSongs.first);
                     return GestureDetector(
-                      onTap: () => audioProvider.playPlaylist(albumSongs, 0),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AlbumDetailScreen(
+                              albumName: albumName,
+                              albumId: albumId ?? 0,
+                              songs: albumSongs,
+                            ),
+                          ),
+                        );
+                      },
                       child: Container(
                         width: 110,
                         margin: const EdgeInsets.only(right: 8),
@@ -176,7 +195,7 @@ class ArtistDetailScreen extends StatelessWidget {
                 final s = songs[i];
                 final isPlaying = audioProvider.currentSong?.id == s.id;
                 final duration = Duration(milliseconds: s.duration ?? 0);
-                final albumName = s.album ?? 'Álbum';
+                final albumName = TitleUtils.getDisplayAlbum(s);
                 return ListTile(
                   leading: ClipRRect(
                     borderRadius: BorderRadius.circular(4),
@@ -232,14 +251,14 @@ class ArtistDetailScreen extends StatelessWidget {
 class _ArtistHeader extends StatelessWidget {
   final String artistName;
   final List<SongModel> songs;
-  final List<int?> albumIds;
+  final List<int> albumArtworkIds;
   final int albumCount;
   final Duration totalDuration;
 
   const _ArtistHeader({
     required this.artistName,
     required this.songs,
-    required this.albumIds,
+    required this.albumArtworkIds,
     required this.albumCount,
     required this.totalDuration,
   });
@@ -262,7 +281,9 @@ class _ArtistHeader extends StatelessWidget {
             child: SizedBox(
               width: 120,
               height: 120,
-              child: _AlbumCollage(albumIds: albumIds.take(4).toList()),
+              child: _AlbumCollage(
+                albumIds: albumArtworkIds.take(4).toList(),
+              ),
             ),
           ),
           const SizedBox(width: 16),
@@ -299,7 +320,7 @@ class _ArtistHeader extends StatelessWidget {
 }
 
 class _AlbumCollage extends StatelessWidget {
-  final List<int?> albumIds;
+  final List<int> albumIds;
   const _AlbumCollage({required this.albumIds});
 
   @override
@@ -311,7 +332,7 @@ class _AlbumCollage extends StatelessWidget {
     }
     if (albumIds.length == 1) {
       return QueryArtworkWidget(
-        id: albumIds[0] ?? 0,
+        id: albumIds[0],
         type: ArtworkType.ALBUM,
         size: 400,
         artworkHeight: 120,
@@ -322,7 +343,7 @@ class _AlbumCollage extends StatelessWidget {
       );
     }
     // Grid 2x2
-    final cells =
+    final List<int?> cells =
         List.generate(4, (i) => albumIds.length > i ? albumIds[i] : null);
     return GridView.count(
       crossAxisCount: 2,

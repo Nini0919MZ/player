@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../../providers/audio_provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/title_utils.dart';
 import '../album_detail_screen.dart';
 
 class AlbumsTab extends StatelessWidget {
@@ -11,67 +12,105 @@ class AlbumsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final audioProvider = Provider.of<AudioProvider>(context, listen: false);
+    final audioProvider = Provider.of<AudioProvider>(context);
+    final albumsByKey = <String, List<SongModel>>{};
 
-    return FutureBuilder<List<AlbumModel>>(
-      future: audioProvider.audioQuery.queryAlbums(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        
-        final albums = snapshot.data!;
+    for (final song in audioProvider.allSongs) {
+      albumsByKey.putIfAbsent(TitleUtils.getAlbumKey(song), () => []).add(song);
+    }
 
-        return ListView.builder(
-          itemCount: albums.length,
-          itemBuilder: (context, index) {
-            return ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              leading: ClipRRect(
-                borderRadius: BorderRadius.circular(4.0),
-                child: QueryArtworkWidget(
-                  id: albums[index].id,
-                  type: ArtworkType.ALBUM,
-                  artworkHeight: 50,
-                  artworkWidth: 50,
-                  nullArtworkWidget: Container(
+    final albums = albumsByKey.values
+        .map((songs) => _AlbumLibraryEntry(
+              albumName: TitleUtils.getDisplayAlbum(songs.first),
+              artistName: TitleUtils.getDisplayArtist(songs.first.artist),
+              artworkId: songs.first.albumId,
+              songs: songs,
+            ))
+        .toList()
+      ..sort((a, b) =>
+          a.albumName.toLowerCase().compareTo(b.albumName.toLowerCase()));
+
+    if (albums.isEmpty) {
+      return const Center(
+        child: Text(
+          'Sin álbumes disponibles',
+          style: TextStyle(color: AppTheme.textSecondary),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: albums.length,
+      itemBuilder: (context, index) {
+        final album = albums[index];
+        return ListTile(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          leading: ClipRRect(
+            borderRadius: BorderRadius.circular(4.0),
+            child: album.artworkId == null
+                ? Container(
                     height: 50,
                     width: 50,
                     color: Colors.grey[800],
                     child: const Icon(Icons.album, color: Colors.grey),
-                  ),
-                ),
-              ),
-              title: Text(
-                albums[index].album,
-                style: const TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w500),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Text(
-                "${albums[index].artist ?? "Desconocido"} • ${albums[index].numOfSongs} Canciones",
-                style: const TextStyle(color: AppTheme.textSecondary),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              onTap: () {
-                final albumModel = albums[index];
-                final albumSongs = audioProvider.allSongs.where((s) => s.albumId == albumModel.id).toList();
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => AlbumDetailScreen(
-                      albumName: albumModel.album,
-                      albumId: albumModel.id,
-                      songs: albumSongs,
+                  )
+                : QueryArtworkWidget(
+                    id: album.artworkId!,
+                    type: ArtworkType.ALBUM,
+                    artworkHeight: 50,
+                    artworkWidth: 50,
+                    nullArtworkWidget: Container(
+                      height: 50,
+                      width: 50,
+                      color: Colors.grey[800],
+                      child: const Icon(Icons.album, color: Colors.grey),
                     ),
                   ),
-                );
-              },
+          ),
+          title: Text(
+            album.albumName,
+            style: const TextStyle(
+              color: AppTheme.textMain,
+              fontWeight: FontWeight.w500,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            "${album.artistName} • ${album.songs.length} Canciones",
+            style: const TextStyle(color: AppTheme.textSecondary),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => AlbumDetailScreen(
+                  albumName: album.albumName,
+                  albumId: album.artworkId ?? 0,
+                  songs: album.songs,
+                ),
+              ),
             );
           },
         );
       },
     );
   }
+}
+
+class _AlbumLibraryEntry {
+  final String albumName;
+  final String artistName;
+  final int? artworkId;
+  final List<SongModel> songs;
+
+  const _AlbumLibraryEntry({
+    required this.albumName,
+    required this.artistName,
+    required this.artworkId,
+    required this.songs,
+  });
 }

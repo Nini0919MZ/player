@@ -121,11 +121,9 @@ class _SongInfoModalState extends State<SongInfoModal> {
             _infoTile("Título", TitleUtils.getDisplayTitle(song)),
             _infoTile(
               "Artista",
-              (song.artist == null || song.artist == "<unknown>")
-                  ? "Artista Desconocido"
-                  : song.artist!,
+              TitleUtils.getDisplayArtist(song.artist),
             ),
-            _infoTile("Álbum", song.album ?? "Desconocido"),
+            _infoTile("Álbum", TitleUtils.getDisplayAlbum(song)),
             if (song.track != null) _infoTile("Pista", song.track.toString()),
             _infoTile("Tamaño", _formatSize(song.size)),
             FutureBuilder<Map<String, String>>(

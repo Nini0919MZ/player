@@ -45,7 +45,7 @@ class AlbumDetailScreen extends StatelessWidget {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withOpacity(0.5),
+                      Colors.black.withValues(alpha: 0.5),
                       const Color(0xFF121212),
                     ],
                   ),
@@ -84,7 +84,7 @@ class AlbumDetailScreen extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(
                         songs.isNotEmpty
-                            ? (songs.first.artist ?? "Artista Desconocido")
+                            ? TitleUtils.getDisplayArtist(songs.first.artist)
                             : "Artista Desconocido",
                         style: const TextStyle(
                             color: Colors.white70, fontSize: 16),

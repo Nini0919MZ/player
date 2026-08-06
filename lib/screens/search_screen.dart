@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/audio_provider.dart';
 import '../theme/app_theme.dart';
+import '../utils/title_utils.dart';
 import '../widgets/song_list_tile.dart';
 import 'album_detail_screen.dart';
 import 'artist_detail_screen.dart';
@@ -39,20 +40,39 @@ class _SearchScreenState extends State<SearchScreen> {
       return titleMatch || artistMatch || albumMatch;
     }).toList();
 
-    final filteredAlbums = audioProvider.allAlbums.where((album) {
-      final titleMatch = album.album.toLowerCase().contains(query);
-      final artistMatch = album.artist?.toLowerCase().contains(query) ?? false;
+    final albumsByKey = <String, List<SongModel>>{};
+    for (final song in audioProvider.allSongs) {
+      albumsByKey.putIfAbsent(TitleUtils.getAlbumKey(song), () => []).add(song);
+    }
+    final allAlbumEntries = albumsByKey.values
+        .map((songs) => _AlbumSearchEntry(
+              albumName: TitleUtils.getDisplayAlbum(songs.first),
+              artistName: TitleUtils.getDisplayArtist(songs.first.artist),
+              artworkId: songs.first.albumId,
+              songs: songs,
+            ))
+        .toList()
+      ..sort((a, b) =>
+          a.albumName.toLowerCase().compareTo(b.albumName.toLowerCase()));
+
+    final filteredAlbums = allAlbumEntries.where((album) {
+      final titleMatch = album.albumName.toLowerCase().contains(query);
+      final artistMatch = album.artistName.toLowerCase().contains(query);
       return titleMatch || artistMatch;
     }).toList();
 
-    final filteredArtists = audioProvider.allSongs
-        .map((song) => song.artist)
-        .whereType<String>()
-        .where((artist) => artist.trim().isNotEmpty && artist != '<unknown>')
-        .toSet()
-        .where((artist) => artist.toLowerCase().contains(query))
+    final artistsByKey = <String, String>{};
+    for (final song in audioProvider.allSongs) {
+      final key = TitleUtils.getArtistKey(song.artist);
+      artistsByKey.putIfAbsent(
+        key,
+        () => TitleUtils.getDisplayArtist(song.artist),
+      );
+    }
+    final filteredArtists = artistsByKey.entries
+        .where((entry) => entry.value.toLowerCase().contains(query))
         .toList()
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      ..sort((a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase()));
 
     final filteredFolders = audioProvider.sortedFolderPaths
         .where((folder) => folder.toLowerCase().contains(query))
@@ -150,10 +170,10 @@ class _SearchScreenState extends State<SearchScreen> {
                               (context, index) {
                                 final album = filteredAlbums[index];
                                 return _LibraryResultTile(
-                                  title: album.album,
+                                  title: album.albumName,
                                   subtitle:
-                                      '${album.artist ?? 'Artista Desconocido'} • ${album.numOfSongs} canciones',
-                                  artworkId: album.id,
+                                      '${album.artistName} • ${album.songs.length} canciones',
+                                  artworkId: album.artworkId,
                                   artworkType: ArtworkType.ALBUM,
                                   fallbackIcon: Icons.album,
                                   onTap: () => _openAlbum(
@@ -173,9 +193,12 @@ class _SearchScreenState extends State<SearchScreen> {
                           SliverList(
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
-                                final artistName = filteredArtists[index];
+                                final artistKey = filteredArtists[index].key;
+                                final artistName = filteredArtists[index].value;
                                 final artistSongs = audioProvider.allSongs
-                                    .where((song) => song.artist == artistName)
+                                    .where((song) =>
+                                        TitleUtils.getArtistKey(song.artist) ==
+                                        artistKey)
                                     .toList();
                                 final firstAlbumId = artistSongs.isNotEmpty
                                     ? artistSongs.first.albumId
@@ -189,6 +212,7 @@ class _SearchScreenState extends State<SearchScreen> {
                                   onTap: () => _openArtist(
                                     context,
                                     audioProvider,
+                                    artistKey,
                                     artistName,
                                   ),
                                 );
@@ -275,10 +299,11 @@ class _SearchScreenState extends State<SearchScreen> {
   void _openArtist(
     BuildContext context,
     AudioProvider audioProvider,
+    String artistKey,
     String artistName,
   ) {
     final artistSongs = audioProvider.allSongs
-        .where((song) => song.artist == artistName)
+        .where((song) => TitleUtils.getArtistKey(song.artist) == artistKey)
         .toList();
     if (artistSongs.isEmpty) return;
 
@@ -296,19 +321,17 @@ class _SearchScreenState extends State<SearchScreen> {
   void _openAlbum(
     BuildContext context,
     AudioProvider audioProvider,
-    AlbumModel album,
+    _AlbumSearchEntry album,
   ) {
-    final albumSongs = audioProvider.allSongs
-        .where((song) => song.albumId == album.id)
-        .toList();
+    final albumSongs = album.songs;
     if (albumSongs.isEmpty) return;
 
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => AlbumDetailScreen(
-          albumName: album.album,
-          albumId: album.id,
+          albumName: album.albumName,
+          albumId: album.artworkId ?? 0,
           songs: albumSongs,
         ),
       ),
@@ -339,6 +362,20 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
     );
   }
+}
+
+class _AlbumSearchEntry {
+  final String albumName;
+  final String artistName;
+  final int? artworkId;
+  final List<SongModel> songs;
+
+  const _AlbumSearchEntry({
+    required this.albumName,
+    required this.artistName,
+    required this.artworkId,
+    required this.songs,
+  });
 }
 
 class _LibraryResultTile extends StatelessWidget {

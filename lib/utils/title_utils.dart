@@ -24,4 +24,56 @@ class TitleUtils {
 
     return name.trim();
   }
+
+  static bool isUnknownArtist(String? artist) {
+    if (artist == null) return true;
+    final normalized = artist.trim().toLowerCase();
+    return normalized.isEmpty || normalized == '<unknown>';
+  }
+
+  static String getDisplayArtist(String? artist) {
+    return isUnknownArtist(artist) ? 'Artista Desconocido' : artist!.trim();
+  }
+
+  static String getArtistKey(String? artist) {
+    if (isUnknownArtist(artist)) return '__unknown_artist__';
+    return artist!.trim().toLowerCase();
+  }
+
+  static bool isUnknownAlbum(String? album) {
+    if (album == null) return true;
+    final normalized = album.trim().toLowerCase();
+    return normalized.isEmpty ||
+        normalized == '<unknown>' ||
+        normalized == 'unknown album';
+  }
+
+  static String getFolderPath(String filePath) {
+    final normalized = filePath.replaceAll('\\', '/');
+    final separator = normalized.lastIndexOf('/');
+    if (separator <= 0) return '';
+    return normalized.substring(0, separator);
+  }
+
+  static String getFolderName(String filePath) {
+    final folderPath = getFolderPath(filePath);
+    if (folderPath.isEmpty) return 'Carpeta desconocida';
+    final parts =
+        folderPath.split('/').where((part) => part.isNotEmpty).toList();
+    return parts.isEmpty ? 'Carpeta desconocida' : parts.last;
+  }
+
+  static String getDisplayAlbum(SongModel song) {
+    if (!isUnknownAlbum(song.album)) return song.album!.trim();
+    return getFolderName(song.data);
+  }
+
+  static String getAlbumKey(SongModel song) {
+    if (song.albumId != null) return 'id:${song.albumId}';
+    if (!isUnknownAlbum(song.album)) {
+      return 'name:${song.album!.trim().toLowerCase()}';
+    }
+    final folderPath = getFolderPath(song.data).toLowerCase();
+    return folderPath.isEmpty ? 'unknown_album' : 'folder:$folderPath';
+  }
 }
