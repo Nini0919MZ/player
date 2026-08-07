@@ -298,6 +298,10 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                 showSongInfo(context, song);
                 return;
               }
+              if (value == 'editor_etiquetas' && context.mounted) {
+                showEditTagDialog(context, audioProvider, song: song);
+                return;
+              }
               if (value == 'modo_auto') {
                 await _toggleModoAuto(audioProvider);
                 return;
@@ -306,8 +310,9 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                 await _toggleEpicentro(audioProvider);
                 return;
               }
-              if (value == 'mas_opciones' && context.mounted) {
-                showOptionsMenu(context, audioProvider);
+              if (value == 'eliminar' && context.mounted) {
+                showDeleteDialog(context, audioProvider, song);
+                return;
               }
             },
             itemBuilder: (context) => [
@@ -319,6 +324,17 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                         size: 20, color: Colors.white),
                     SizedBox(width: 10),
                     Text('Información de archivo',
+                        style: TextStyle(color: Colors.white)),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'editor_etiquetas',
+                child: Row(
+                  children: [
+                    Icon(Icons.edit_outlined, size: 20, color: Colors.white),
+                    SizedBox(width: 10),
+                    Text('Editor de etiquetas',
                         style: TextStyle(color: Colors.white)),
                   ],
                 ),
@@ -357,13 +373,62 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                   ],
                 ),
               ),
+              if (_epicentro)
+                PopupMenuItem(
+                  enabled: false,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: StatefulBuilder(
+                    builder: (context, setItemState) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'Intensidad',
+                            style: TextStyle(color: Colors.white70, fontSize: 12),
+                          ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: SliderTheme(
+                                  data: SliderTheme.of(context).copyWith(
+                                    trackHeight: 2.0,
+                                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
+                                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 14.0),
+                                  ),
+                                  child: Slider(
+                                    value: audioProvider.epicenterIntensity,
+                                    min: 0,
+                                    max: 100,
+                                    activeColor: Colors.greenAccent,
+                                    inactiveColor: Colors.white24,
+                                    onChanged: (v) {
+                                      audioProvider.updateEpicenterSettings(intensity: v);
+                                      setItemState(() {});
+                                    },
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '${audioProvider.epicenterIntensity.toInt()}%',
+                                style: const TextStyle(color: Colors.white70, fontSize: 11),
+                              ),
+                            ],
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
               const PopupMenuItem(
-                value: 'mas_opciones',
+                value: 'eliminar',
                 child: Row(
                   children: [
-                    Icon(Icons.tune_rounded, size: 20, color: Colors.white),
+                    Icon(Icons.delete_outline,
+                        size: 20, color: Colors.redAccent),
                     SizedBox(width: 10),
-                    Text('Más opciones', style: TextStyle(color: Colors.white)),
+                    Text('Eliminar del dispositivo',
+                        style: TextStyle(color: Colors.redAccent)),
                   ],
                 ),
               ),

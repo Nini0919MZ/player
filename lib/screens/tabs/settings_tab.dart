@@ -54,6 +54,88 @@ class SettingsTab extends StatelessWidget {
             activeThumbColor: Colors.tealAccent,
             activeTrackColor: Colors.teal.withAlpha(100),
           ),
+          if (audioProvider.isEpicenterEnabled) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Intensidad de Epicentro', style: TextStyle(color: Colors.white, fontSize: 14)),
+                  const SizedBox(height: 4),
+                  const Text('Define la cantidad y fuerza de bajo sintetizado que se añadirá a la mezcla.',
+                      style: TextStyle(color: Colors.grey, fontSize: 12)),
+                  Row(
+                    children: [
+                      const Icon(Icons.graphic_eq, color: Colors.grey, size: 20),
+                      Expanded(
+                        child: Slider(
+                          value: audioProvider.epicenterIntensity,
+                          min: 0,
+                          max: 100,
+                          activeColor: Colors.tealAccent,
+                          inactiveColor: Colors.white24,
+                          onChanged: (v) => audioProvider.updateEpicenterSettings(intensity: v),
+                        ),
+                      ),
+                      Text('${audioProvider.epicenterIntensity.toInt()}%', style: const TextStyle(color: Colors.white, fontSize: 13)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                title: const Text('Ajustes Avanzados de Epicentro', style: TextStyle(color: Colors.tealAccent, fontSize: 14)),
+                childrenPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Sweep Freq', style: TextStyle(color: Colors.white, fontSize: 14)),
+                      const SizedBox(height: 4),
+                      const Text('Ajusta la frecuencia central donde se detectará y restaurará el bajo profundo.', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Slider(
+                              value: audioProvider.epicenterSweepFreq.clamp(27.0, 63.0),
+                              min: 27, max: 63,
+                              activeColor: Colors.tealAccent, inactiveColor: Colors.white24,
+                              onChanged: (v) => audioProvider.updateEpicenterSettings(sweepFreq: v),
+                            ),
+                          ),
+                          Text('${audioProvider.epicenterSweepFreq.toInt()} Hz', style: const TextStyle(color: Colors.white, fontSize: 13)),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Width', style: TextStyle(color: Colors.white, fontSize: 14)),
+                      const SizedBox(height: 4),
+                      const Text('Controla el rango de frecuencias adyacentes que afectará el efecto de bajo.', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Slider(
+                              value: audioProvider.epicenterWidth.clamp(0.0, 100.0),
+                              min: 0, max: 100,
+                              activeColor: Colors.tealAccent, inactiveColor: Colors.white24,
+                              onChanged: (v) => audioProvider.updateEpicenterSettings(width: v),
+                            ),
+                          ),
+                          Text('${audioProvider.epicenterWidth.toInt()}%', style: const TextStyle(color: Colors.white, fontSize: 13)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
 
           const SizedBox(height: 8),
           const Divider(color: Colors.white10, height: 1),
@@ -220,50 +302,79 @@ class _TabsSelectorState extends State<_TabsSelector> {
             style: const TextStyle(color: Colors.white54, fontSize: 13),
           ),
         ),
-        ..._allTabs.map((id) {
-          final meta = _tabMeta[id]!;
-          final enabled = _isEnabled(id);
-          final isLast = enabled && _enabled.length == 1;
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 2.2,
+          ),
+          itemCount: _allTabs.length,
+          itemBuilder: (context, index) {
+            final id = _allTabs[index];
+            final meta = _tabMeta[id]!;
+            final enabled = _isEnabled(id);
+            final isLast = enabled && _enabled.length == 1;
 
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            decoration: BoxDecoration(
-              color: enabled
-                  ? const Color(0xFF1E3A3A)
-                  : const Color(0xFF1E1E1E),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: enabled ? Colors.tealAccent.withAlpha(100) : Colors.white10,
-                width: 1,
-              ),
-            ),
-            child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-              leading: Icon(
-                meta.icon,
-                color: enabled ? Colors.tealAccent : Colors.grey,
-                size: 22,
-              ),
-              title: Text(
-                meta.label,
-                style: TextStyle(
-                  color: enabled ? Colors.white : Colors.grey,
-                  fontWeight: enabled ? FontWeight.w600 : FontWeight.normal,
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              decoration: BoxDecoration(
+                color: enabled ? const Color(0xFF1E3A3A) : const Color(0xFF1E1E1E),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: enabled ? Colors.tealAccent.withAlpha(100) : Colors.white10,
+                  width: 1,
                 ),
               ),
-              trailing: Switch(
-                value: enabled,
-                onChanged: isLast ? null : (_) => _toggle(id),
-                activeThumbColor: Colors.tealAccent,
-                activeTrackColor: Colors.teal.withAlpha(100),
-                inactiveTrackColor: Colors.white12,
-                inactiveThumbColor: Colors.grey,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: isLast ? null : () => _toggle(id),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Row(
+                      children: [
+                        Icon(
+                          meta.icon,
+                          color: enabled ? Colors.tealAccent : Colors.grey,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            meta.label,
+                            style: TextStyle(
+                              color: enabled ? Colors.white : Colors.grey,
+                              fontWeight: enabled ? FontWeight.w600 : FontWeight.normal,
+                              fontSize: 12,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Transform.scale(
+                          scale: 0.65,
+                          child: Switch(
+                            value: enabled,
+                            onChanged: isLast ? null : (_) => _toggle(id),
+                            activeThumbColor: Colors.tealAccent,
+                            activeTrackColor: Colors.teal.withAlpha(100),
+                            inactiveTrackColor: Colors.white12,
+                            inactiveThumbColor: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-              onTap: isLast ? null : () => _toggle(id),
-            ),
-          );
-        }),
+            );
+          },
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: Row(

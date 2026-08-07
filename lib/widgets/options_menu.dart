@@ -100,6 +100,11 @@ class _OptionsMenuContent extends StatelessWidget {
   }
 
   void _showDeleteDialog(BuildContext context, AudioProvider provider, SongModel song) {
+    showDeleteDialog(context, provider, song);
+  }
+}
+
+void showDeleteDialog(BuildContext context, AudioProvider provider, SongModel song) {
 
     showDialog(
       context: context,
@@ -140,7 +145,6 @@ class _OptionsMenuContent extends StatelessWidget {
       ),
     );
   }
-}
 
 class _EpicenterSettingsSheet extends StatefulWidget {
   final AudioProvider audioProvider;
@@ -156,8 +160,6 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
   late double _sweepFreq;
   late double _width;
   late double _intensity;
-  late double _balance;
-  late double _volume;
 
   @override
   void initState() {
@@ -166,8 +168,6 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
     _sweepFreq = provider.epicenterSweepFreq;
     _width = provider.epicenterWidth;
     _intensity = provider.epicenterIntensity;
-    _balance = provider.epicenterBalance;
-    _volume = provider.epicenterVolume;
   }
 
   Future<void> _resetDefaults() async {
@@ -175,8 +175,6 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
       _sweepFreq = StatePersistence.defaultEpicenterSweepFreq;
       _width = StatePersistence.defaultEpicenterWidth;
       _intensity = StatePersistence.defaultEpicenterIntensity;
-      _balance = StatePersistence.defaultEpicenterBalance;
-      _volume = StatePersistence.defaultEpicenterVolume;
     });
     await widget.audioProvider.resetEpicenterSettingsToDefault();
   }
@@ -238,28 +236,6 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
               onChanged: (value) {
                 setState(() => _intensity = value);
                 widget.audioProvider.updateEpicenterSettings(intensity: value);
-              },
-            ),
-            _ParamSlider(
-              label: 'Balance',
-              value: _balance,
-              min: 0,
-              max: 100,
-              unit: '%',
-              onChanged: (value) {
-                setState(() => _balance = value);
-                widget.audioProvider.updateEpicenterSettings(balance: value);
-              },
-            ),
-            _ParamSlider(
-              label: 'Volume',
-              value: _volume,
-              min: 0,
-              max: 100,
-              unit: '%',
-              onChanged: (value) {
-                setState(() => _volume = value);
-                widget.audioProvider.updateEpicenterSettings(volume: value);
               },
             ),
             const SizedBox(height: 10),
