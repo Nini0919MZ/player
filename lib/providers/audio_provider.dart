@@ -110,9 +110,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Set<int> get favoriteIds => _favoriteIds;
   bool get isSyncing => _isSyncing;
 
-  // Tab count (UI)
-  int _tabCount = 3;
-  int get tabCount => _tabCount;
+  // Enabled tabs (ordered list of tab IDs)
+  List<String> _enabledTabs = List.from(StatePersistence.defaultEnabledTabs);
+  List<String> get enabledTabs => List.unmodifiable(_enabledTabs);
+  // Legacy compat getter
+  int get tabCount => _enabledTabs.length.clamp(1, 8);
 
   // Concert Hall / Epicenter Getters
   AudioPreset get currentPreset => _currentPreset;
@@ -192,12 +194,12 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     await ArtworkCacheService.init();
     _isEpicenterEnabled = await StatePersistence.loadEpicenterEnabled();
 
-    // Load tab count preference
+    // Load enabled tabs preference
     try {
-      _tabCount = await StatePersistence.loadTabCount();
+      _enabledTabs = await StatePersistence.loadEnabledTabs();
     } catch (e) {
-      debugPrint('Error loading tab count: $e');
-      _tabCount = 3;
+      debugPrint('Error loading enabled tabs: $e');
+      _enabledTabs = List.from(StatePersistence.defaultEnabledTabs);
     }
 
     // Load persisted epicenter params (apply defaults if missing)
@@ -763,15 +765,15 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
-  // Tab count setter
-  Future<void> setTabCount(int count) async {
-    if (count < 2 || count > 6) return;
-    _tabCount = count;
+  // Enabled tabs setter
+  Future<void> setEnabledTabs(List<String> tabs) async {
+    if (tabs.isEmpty) return; // at least one tab must remain
+    _enabledTabs = List.from(tabs);
     notifyListeners();
     try {
-      await StatePersistence.saveTabCount(count);
+      await StatePersistence.saveEnabledTabs(tabs);
     } catch (e) {
-      debugPrint('Error saving tab count: $e');
+      debugPrint('Error saving enabled tabs: $e');
     }
   }
 

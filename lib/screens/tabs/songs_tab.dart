@@ -6,6 +6,7 @@ import '../../../providers/audio_provider.dart';
 import '../../../widgets/song_list_tile.dart';
 import '../../../utils/title_utils.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/count_banner.dart';
 
 class SongsTab extends StatefulWidget {
   const SongsTab({super.key});
@@ -97,9 +98,13 @@ class _SongsTabState extends State<SongsTab> {
       return const Center(child: Text("No se encontraron canciones"));
     }
 
-    return LayoutBuilder(builder: (context, constraints) {
-      return Stack(
-        children: [
+    return Column(
+      children: [
+        CountBanner(count: songs.length, label: 'Canciones'),
+        Expanded(
+          child: LayoutBuilder(builder: (context, constraints) {
+            return Stack(
+              children: [
           ListView.builder(
             controller: _scrollController,
             itemCount: songs.length,
@@ -198,7 +203,10 @@ class _SongsTabState extends State<SongsTab> {
             ),
         ],
       );
-    });
+    }),
+        ),
+      ],
+    );
   }
 
   Future<bool> _showDeleteConfirmation(

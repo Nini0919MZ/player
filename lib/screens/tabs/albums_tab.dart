@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../providers/audio_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/title_utils.dart';
+import '../../../widgets/count_banner.dart';
 import '../album_detail_screen.dart';
 
 class AlbumsTab extends StatelessWidget {
@@ -39,8 +40,12 @@ class AlbumsTab extends StatelessWidget {
       );
     }
 
-    return ListView.builder(
-      itemCount: albums.length,
+    return Column(
+      children: [
+        CountBanner(count: albums.length, label: 'Álbumes'),
+        Expanded(
+          child: ListView.builder(
+            itemCount: albums.length,
       itemBuilder: (context, index) {
         final album = albums[index];
         return ListTile(
@@ -97,6 +102,9 @@ class AlbumsTab extends StatelessWidget {
           },
         );
       },
+    ),
+        ),
+      ],
     );
   }
 }

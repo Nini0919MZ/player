@@ -127,17 +127,29 @@ class StatePersistence {
         _favoritesKey, favorites.map((id) => id.toString()).toList());
   }
 
-  // Tab count persistence (how many tabs to show in the main UI)
+  // Enabled tabs persistence (ordered list of tab IDs)
+  static const String _enabledTabsKey = 'enabled_tabs_v2';
+  static const List<String> defaultEnabledTabs = [
+    'folders', 'songs', 'favorites',
+  ];
+  static const List<String> allAvailableTabs = [
+    'folders', 'songs', 'favorites', 'albums', 'artists', 'playlists', 'recently_added',
+  ];
+
+  static Future<List<String>> loadEnabledTabs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList(_enabledTabsKey);
+    if (saved == null || saved.isEmpty) return defaultEnabledTabs;
+    // Filter out any stale IDs not in allAvailableTabs
+    return saved.where((id) => allAvailableTabs.contains(id)).toList();
+  }
+
+  static Future<void> saveEnabledTabs(List<String> tabs) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_enabledTabsKey, tabs);
+  }
+
+  // Legacy: kept for migration if needed
   static const String _tabCountKey = 'main_tab_count';
-
-  static Future<int> loadTabCount() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(_tabCountKey) ?? 3; // default 3 tabs (Carpetas, Canciones, Favoritos)
-  }
-
-  static Future<void> saveTabCount(int count) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_tabCountKey, count);
-  }
 }
 

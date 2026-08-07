@@ -5,6 +5,7 @@ import 'package:path/path.dart' as path;
 import '../../../providers/audio_provider.dart';
 import '../../../widgets/folder_list_tile.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/count_banner.dart';
 import '../folder_detail_screen.dart';
 
 class FoldersTab extends StatefulWidget {
@@ -84,10 +85,14 @@ class _FoldersTabState extends State<FoldersTab> {
     final allSongs = audioProvider.allSongs;
     final folderPaths = audioProvider.sortedFolderPaths;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Stack(
-          children: [
+    return Column(
+      children: [
+        CountBanner(count: folderPaths.length, label: 'Carpetas'),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return Stack(
+                children: [
             ListView.builder(
               controller: _scrollController,
               itemCount: folderPaths.length,
@@ -178,6 +183,9 @@ class _FoldersTabState extends State<FoldersTab> {
           ],
         );
       }
+    ),
+        ),
+      ],
     );
   }
 }
