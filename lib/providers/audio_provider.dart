@@ -1407,41 +1407,76 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     await StatePersistence.saveFavorites(_favoriteIds);
   }
 
-  void updateSongMetadata(String newTitle, String newArtist) {
-    if (_currentSong == null) return;
-    final index = _currentPlaylist.indexOf(_currentSong!);
-    if (index != -1) {
-      final map = Map<String, dynamic>.from(_currentSong!.getMap);
-      map['title'] = newTitle;
-      map['artist'] = newArtist;
-      _currentSong = SongModel(map);
-      _currentPlaylist[index] = _currentSong!;
+  Future<void> updateSongMetadata(
+    SongModel targetSong, {
+    required String newTitle,
+    required String newArtist,
+    String? newAlbum,
+    String? newGenre,
+    Uint8List? newCoverBytes,
+  }) async {
+    final path = targetSong.data;
 
-      // Propagate changes to main lists so library UI updates
-      final path = _currentSong!.data;
-      final allIdx = _songIndexByPath[path];
-      if (allIdx != null && allIdx >= 0 && allIdx < _allSongs.length) {
-        _allSongs[allIdx] = _currentSong!;
-      } else {
-        final found = _allSongs.indexWhere((s) => s.data == path || s.id == _currentSong!.id);
-        if (found != -1) _allSongs[found] = _currentSong!;
-      }
-
-      final gIdx = _globalQueue.indexWhere((s) => s.data == path || s.id == _currentSong!.id);
-      if (gIdx != -1) _globalQueue[gIdx] = _currentSong!;
-      final fIdx = _folderQueue.indexWhere((s) => s.data == path || s.id == _currentSong!.id);
-      if (fIdx != -1) _folderQueue[fIdx] = _currentSong!;
-
-      // Rebuild index and persist cache (best-effort)
-      _rebuildSongIndex();
-      unawaited(_saveLibraryCache());
-
-      _replacePlaybackQueue(
-        position: _player.position,
-        shouldPlay: _player.playing,
+    // 1. Si hay nuevos bytes de portada, actualizar la caché de artwork
+    if (newCoverBytes != null && newCoverBytes.isNotEmpty) {
+      await ArtworkCacheService.invalidate(targetSong.id);
+      final newUri = await ArtworkCacheService.saveArtworkToTempFile(
+        targetSong.id,
+        newCoverBytes,
+        overwrite: true,
       );
-      notifyListeners();
+      if (newUri != null) {
+        _systemArtworkUriCache[targetSong.id] = newUri;
+      }
     }
+
+    // 2. Construir mapa actualizado para SongModel
+    final map = Map<String, dynamic>.from(targetSong.getMap);
+    map['title'] = newTitle;
+    map['artist'] = newArtist;
+    if (newAlbum != null) map['album'] = newAlbum;
+    if (newGenre != null) map['genre'] = newGenre;
+
+    final updatedSong = SongModel(map);
+
+    // 3. Actualizar en las listas de memoria
+    final allIdx = _songIndexByPath[path];
+    if (allIdx != null && allIdx >= 0 && allIdx < _allSongs.length) {
+      _allSongs[allIdx] = updatedSong;
+    } else {
+      final found =
+          _allSongs.indexWhere((s) => s.data == path || s.id == targetSong.id);
+      if (found != -1) _allSongs[found] = updatedSong;
+    }
+
+    final pIdx = _currentPlaylist
+        .indexWhere((s) => s.data == path || s.id == targetSong.id);
+    if (pIdx != -1) _currentPlaylist[pIdx] = updatedSong;
+
+    final gIdx = _globalQueue
+        .indexWhere((s) => s.data == path || s.id == targetSong.id);
+    if (gIdx != -1) _globalQueue[gIdx] = updatedSong;
+
+    final fIdx = _folderQueue
+        .indexWhere((s) => s.data == path || s.id == targetSong.id);
+    if (fIdx != -1) _folderQueue[fIdx] = updatedSong;
+
+    if (_currentSong?.id == targetSong.id || _currentSong?.data == path) {
+      _currentSong = updatedSong;
+    }
+
+    _rebuildSongIndex();
+
+    // 4. Guardar en la base de datos SQLite y caché en segundo plano
+    unawaited(LibraryDatabase.instance.upsertSongs([updatedSong.getMap]));
+    unawaited(_saveLibraryCache());
+
+    // 5. Actualizar MediaItem en vivo en audio_service y notificación del sistema
+    final updatedMediaItem = await _songToMediaItem(updatedSong);
+    await _handler.updateMediaItem(updatedMediaItem);
+
+    // 6. Notificar a la interfaz de usuario para refresco inmediato en pantalla
+    notifyListeners();
   }
 
   Future<bool> deleteSong(SongModel song) async {

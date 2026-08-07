@@ -169,6 +169,20 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       _player.seek(Duration.zero, index: index);
 
   @override
+  Future<void> updateMediaItem(MediaItem mediaItem) async {
+    final currentQueue = queue.value;
+    final index = currentQueue.indexWhere((i) => i.id == mediaItem.id);
+    if (index != -1) {
+      final updatedQueue = List<MediaItem>.from(currentQueue);
+      updatedQueue[index] = mediaItem;
+      queue.add(updatedQueue);
+    }
+    if (this.mediaItem.value?.id == mediaItem.id) {
+      this.mediaItem.add(mediaItem);
+    }
+  }
+
+  @override
   Future<void> updateQueue(List<MediaItem> queue) async {
     this.queue.add(queue);
   }

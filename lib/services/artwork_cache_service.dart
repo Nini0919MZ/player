@@ -35,16 +35,17 @@ class ArtworkCacheService {
   /// aplicar el fallback apropiado.
   static Future<Uri?> saveArtworkToTempFile(
     int songId,
-    Uint8List artworkBytes,
-  ) async {
+    Uint8List artworkBytes, {
+    bool overwrite = false,
+  }) async {
     if (artworkBytes.isEmpty) return null;
 
     try {
       final dir = _cacheDir ?? await _ensureDir();
       final file = File('${dir.path}/artwork_$songId.png');
 
-      // Reutilizar si el archivo ya existe y no está vacío
-      if (await file.exists() && await file.length() > 0) {
+      // Reutilizar solo si overwrite es false, y el archivo existe y no está vacío
+      if (!overwrite && await file.exists() && await file.length() > 0) {
         return file.uri;
       }
 

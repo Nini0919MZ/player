@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:audiotags/audiotags.dart';
 import 'package:image_picker/image_picker.dart';
@@ -352,6 +353,8 @@ class _EditTagDialogState extends State<_EditTagDialog> {
   late final TextEditingController _year;
   late final TextEditingController _track;
   File? _newCoverFile;
+  Uint8List? _existingCoverBytes;
+  List<Picture> _existingPictures = [];
 
   @override
   void initState() {
@@ -365,9 +368,32 @@ class _EditTagDialogState extends State<_EditTagDialog> {
     _albumArtist = TextEditingController();
     _composer = TextEditingController();
     _genre = TextEditingController(text: song.genre ?? "");
-    // SongModel exposes `song.track` for tracking number
     _year = TextEditingController();
     _track = TextEditingController(text: song.track?.toString() ?? "");
+
+    _loadExistingTags(song.data);
+  }
+
+  Future<void> _loadExistingTags(String path) async {
+    try {
+      final tag = await AudioTags.read(path);
+      if (tag != null && mounted) {
+        setState(() {
+          if (tag.year != null && _year.text.isEmpty) {
+            _year.text = tag.year.toString();
+          }
+          if (tag.genre != null && _genre.text.isEmpty) {
+            _genre.text = tag.genre!;
+          }
+          if (tag.pictures.isNotEmpty) {
+            _existingPictures = tag.pictures;
+            _existingCoverBytes = tag.pictures.first.bytes;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Error reading existing tags: $e');
+    }
   }
 
   @override
@@ -394,35 +420,69 @@ class _EditTagDialogState extends State<_EditTagDialog> {
     Navigator.pop(context);
     try {
       final song = widget.provider.currentSong!;
+
       List<Picture> pics = [];
+      Uint8List? coverBytesForCache;
+
       if (_newCoverFile != null) {
-        final bytes = await _newCoverFile!.readAsBytes();
+        coverBytesForCache = await _newCoverFile!.readAsBytes();
         pics = [
           Picture(
-              bytes: bytes,
-              pictureType: PictureType.coverFront,
-              mimeType: MimeType.jpeg)
+            bytes: coverBytesForCache,
+            pictureType: PictureType.coverFront,
+            mimeType: MimeType.jpeg,
+          )
         ];
+      } else if (_existingPictures.isNotEmpty) {
+        // PRESERVAR CARÁTULA EXISTENTE: Reinyectar las fotos leídas de las etiquetas
+        pics = _existingPictures;
+        coverBytesForCache = _existingCoverBytes;
+      } else {
+        // Fallback por si la lectura asíncrona no había terminado aún
+        final tagRead = await AudioTags.read(song.data);
+        if (tagRead != null && tagRead.pictures.isNotEmpty) {
+          pics = tagRead.pictures;
+          coverBytesForCache = pics.first.bytes;
+        }
       }
+
       final tag = Tag(
-        title: _title.text.isEmpty ? null : _title.text,
-        album: _album.text.isEmpty ? null : _album.text,
-        artist: _artist.text.isEmpty ? null : _artist.text,
-        genre: _genre.text.isEmpty ? null : _genre.text,
+        title: _title.text.trim().isEmpty ? null : _title.text.trim(),
+        album: _album.text.trim().isEmpty ? null : _album.text.trim(),
+        artist: _artist.text.trim().isEmpty ? null : _artist.text.trim(),
+        genre: _genre.text.trim().isEmpty ? null : _genre.text.trim(),
         year: int.tryParse(_year.text),
         pictures: pics,
       );
+
+      // 1. Escribir metadatos en el archivo físico
       await AudioTags.write(song.data, tag);
-      widget.provider.updateSongMetadata(_title.text, _artist.text);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("Etiquetas guardadas en el archivo.",
-              style: TextStyle(color: Colors.white)),
-          backgroundColor: Colors.green));
+
+      // 2. Actualizar AudioProvider, MediaItem y notificación del sistema en tiempo real
+      await widget.provider.updateSongMetadata(
+        song,
+        newTitle: _title.text.trim().isEmpty ? song.title : _title.text.trim(),
+        newArtist: _artist.text.trim().isEmpty
+            ? (song.artist ?? 'Artista Desconocido')
+            : _artist.text.trim(),
+        newAlbum: _album.text.trim().isEmpty ? song.album : _album.text.trim(),
+        newGenre: _genre.text.trim().isEmpty ? song.genre : _genre.text.trim(),
+        newCoverBytes: coverBytesForCache,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Etiquetas guardadas y actualizadas en vivo.",
+                style: TextStyle(color: Colors.white)),
+            backgroundColor: Colors.green));
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text("Error al guardar: $e",
-              style: const TextStyle(color: Colors.white)),
-          backgroundColor: Colors.red));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text("Error al guardar: $e",
+                style: const TextStyle(color: Colors.white)),
+            backgroundColor: Colors.red));
+      }
     }
   }
 
@@ -446,6 +506,13 @@ class _EditTagDialogState extends State<_EditTagDialog> {
 
   @override
   Widget build(BuildContext context) {
+    ImageProvider? coverImageProvider;
+    if (_newCoverFile != null) {
+      coverImageProvider = FileImage(_newCoverFile!);
+    } else if (_existingCoverBytes != null) {
+      coverImageProvider = MemoryImage(_existingCoverBytes!);
+    }
+
     return AlertDialog(
       backgroundColor: const Color(0xFF2A2A2A),
       title: const Text("Editor de etiquetas",
@@ -467,12 +534,12 @@ class _EditTagDialogState extends State<_EditTagDialog> {
                   decoration: BoxDecoration(
                     color: Colors.grey[800],
                     borderRadius: BorderRadius.circular(8),
-                    image: _newCoverFile != null
+                    image: coverImageProvider != null
                         ? DecorationImage(
-                            image: FileImage(_newCoverFile!), fit: BoxFit.cover)
+                            image: coverImageProvider, fit: BoxFit.cover)
                         : null,
                   ),
-                  child: _newCoverFile == null
+                  child: coverImageProvider == null
                       ? const Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
