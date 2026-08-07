@@ -17,7 +17,11 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace = "com.example.player"
     compileSdk = 36
-    ndkVersion = flutter.ndkVersion
+
+    // Fix Bug #2 (paso 1): Fijar versión NDK explícita para que audiotags
+    // (libaudiotags.so) compile correctamente en todas las ABIs.
+    // Si flutter.ndkVersion no empaqueta tu ABI, este valor fuerza la versión LTS.
+    ndkVersion = "27.0.12077973"
 
     signingConfigs {
         create("release") {
@@ -43,13 +47,30 @@ android {
         targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Fix Bug #2 (paso 2): Empaquetar libaudiotags.so para todas las
+        // arquitecturas relevantes. Sin este bloque, Gradle puede omitir la
+        // ABI del dispositivo de prueba y dlopen falla con "not found".
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
     }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = if (keystorePropertiesFile.exists()) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
+            signingConfig = if (keystorePropertiesFile.exists())
+                signingConfigs.getByName("release")
+            else
+                signingConfigs.getByName("debug")
+        }
+    }
+
+    // Fix Bug #2 (paso 3): Asegurar que las librerías .so NO sean excluidas
+    // ni comprimidas dentro del APK — requerido para dlopen en tiempo de ejecución.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 }
@@ -61,4 +82,6 @@ flutter {
 dependencies {
     implementation("androidx.media3:media3-common:1.4.1")
     implementation("androidx.media3:media3-exoplayer:1.4.1")
+    // Fix Bug #3: DocumentFile necesario para operaciones SAF en SD Card
+    implementation("androidx.documentfile:documentfile:1.0.1")
 }

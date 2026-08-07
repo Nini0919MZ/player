@@ -8,9 +8,11 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
 import android.view.WindowManager
+import androidx.documentfile.provider.DocumentFile
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import com.ryanheise.audioservice.AudioServiceActivity
@@ -23,10 +25,14 @@ class MainActivity : AudioServiceActivity() {
     private val TAG = "MainActivity"
     private val CHANNEL = "com.example.player/media_utils"
     private val WIDGET_CHANNEL = "com.example.player/widget_actions"
+    private val SAF_CHANNEL = "com.example.player/saf_utils"
     private var pendingResult: MethodChannel.Result? = null
     private val DELETE_REQUEST_CODE = 1001
+    private val SAF_REQUEST_CODE = 1002
+    private var pendingSafResult: MethodChannel.Result? = null
     private var widgetMethodChannel: MethodChannel? = null
     private var mediaMethodChannel: MethodChannel? = null
+    private var safMethodChannel: MethodChannel? = null
     private var mediaObserver: ContentObserver? = null
     private var myFlutterEngine: FlutterEngine? = null
 
@@ -153,6 +159,78 @@ class MainActivity : AudioServiceActivity() {
         }
 
         registerMediaObserver()
+
+        // ── Bug #3: SAF Channel para escritura en SD Card ─────────────────────
+        safMethodChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger, SAF_CHANNEL
+        )
+        safMethodChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "requestSdCardAccess" -> {
+                    pendingSafResult = result
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                        addFlags(
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                            Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+                        )
+                    }
+                    startActivityForResult(intent, SAF_REQUEST_CODE)
+                }
+                "hasPersistedPermission" -> {
+                    val treeUriStr = call.argument<String>("treeUri")
+                    if (treeUriStr == null) {
+                        result.success(false)
+                        return@setMethodCallHandler
+                    }
+                    val treeUri = Uri.parse(treeUriStr)
+                    val persisted = contentResolver.persistedUriPermissions
+                        .any { it.uri == treeUri && it.isWritePermission }
+                    result.success(persisted)
+                }
+                "getPersistedTreeUri" -> {
+                    val uri = contentResolver.persistedUriPermissions
+                        .firstOrNull { it.isWritePermission }
+                        ?.uri?.toString()
+                    result.success(uri)
+                }
+                "writeFileViaSaf" -> {
+                    val filePath = call.argument<String>("filePath")
+                    val bytes = call.argument<ByteArray>("bytes")
+                    if (filePath == null || bytes == null) {
+                        result.error("INVALID_ARGUMENT", "filePath and bytes are required", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val success = writeFileViaSaf(filePath, bytes)
+                        result.success(success)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "writeFileViaSaf error: ${e.message}", e)
+                        result.error("WRITE_FAILED", e.message, null)
+                    }
+                }
+                "writeByDocumentUri" -> {
+                    val documentUriStr = call.argument<String>("documentUri")
+                    val bytes = call.argument<ByteArray>("bytes")
+                    if (documentUriStr == null || bytes == null) {
+                        result.error("INVALID_ARGUMENT", "documentUri and bytes are required", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val documentUri = Uri.parse(documentUriStr)
+                        contentResolver.openOutputStream(documentUri, "wt")?.use { out ->
+                            out.write(bytes)
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "writeByDocumentUri error: ${e.message}", e)
+                        result.error("WRITE_FAILED", e.message, null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     private fun registerMediaObserver() {
@@ -217,14 +295,37 @@ class MainActivity : AudioServiceActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == DELETE_REQUEST_CODE) {
-            Log.d(TAG, "onActivityResult for delete request. ResultCode: $resultCode")
-            if (resultCode == Activity.RESULT_OK) {
-                pendingResult?.success(true)
-            } else {
-                pendingResult?.success(false)
+        when (requestCode) {
+            DELETE_REQUEST_CODE -> {
+                Log.d(TAG, "onActivityResult for delete request. ResultCode: $resultCode")
+                if (resultCode == Activity.RESULT_OK) {
+                    pendingResult?.success(true)
+                } else {
+                    pendingResult?.success(false)
+                }
+                pendingResult = null
             }
-            pendingResult = null
+            SAF_REQUEST_CODE -> {
+                // Bug #3: Persistir el URI de árbol SAF que el usuario concedió
+                if (resultCode == Activity.RESULT_OK) {
+                    val treeUri = data?.data
+                    if (treeUri != null) {
+                        // Persistir el permiso para que sobreviva reinicios de la app
+                        contentResolver.takePersistableUriPermission(
+                            treeUri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                        )
+                        Log.d(TAG, "SAF tree URI persisted: $treeUri")
+                        pendingSafResult?.success(treeUri.toString())
+                    } else {
+                        pendingSafResult?.success(null)
+                    }
+                } else {
+                    pendingSafResult?.success(null)
+                }
+                pendingSafResult = null
+            }
         }
     }
 
@@ -332,6 +433,89 @@ class MainActivity : AudioServiceActivity() {
             virtualizer = null
             equalizer = null
             loudnessEnhancer = null
+        }
+    }
+
+    // ── Bug #3: SAF helpers para escritura en SD Card ─────────────────────────
+
+    /**
+     * Resuelve [filePath] (ej: /storage/ABCD-1234/Music/song.mp3) a un
+     * Document URI SAF usando el árbol de permisos persistido, y escribe
+     * [bytes] en ese archivo.
+     *
+     * Algoritmo:
+     * 1. Encuentra el treeUri persistido que cubre el volumen de [filePath].
+     * 2. Convierte la ruta relativa dentro del volumen a un Document URI.
+     * 3. Abre un OutputStream y escribe los bytes.
+     */
+    private fun writeFileViaSaf(filePath: String, bytes: ByteArray): Boolean {
+        // Extraer el ID del volumen y la ruta relativa del filePath
+        // Ejemplo: /storage/ABCD-1234/Music/song.mp3
+        //   -> volumeId = "ABCD-1234", relativePath = "Music/song.mp3"
+        val storageParts = filePath.removePrefix("/storage/").split("/", limit = 2)
+        if (storageParts.size < 2) {
+            Log.e(TAG, "Cannot parse filePath for SAF: $filePath")
+            return false
+        }
+        val volumeId = storageParts[0] // "ABCD-1234" o "emulated"
+        val relativePath = storageParts[1] // "Music/song.mp3"
+
+        // Buscar el treeUri persistido para este volumen
+        val persistedUri = contentResolver.persistedUriPermissions
+            .firstOrNull { perm ->
+                perm.isWritePermission &&
+                perm.uri.toString().contains(volumeId, ignoreCase = true)
+            }?.uri
+
+        if (persistedUri == null) {
+            Log.e(TAG, "No persisted SAF permission for volume: $volumeId")
+            return false
+        }
+
+        // Construir el Document URI para el archivo
+        // El docId tiene formato "ABCD-1234:Music/song.mp3"
+        val docId = "$volumeId:$relativePath"
+        val docUri = DocumentsContract.buildDocumentUriUsingTree(
+            persistedUri,
+            docId
+        )
+
+        return try {
+            contentResolver.openOutputStream(docUri, "wt")?.use { out ->
+                out.write(bytes)
+            }
+            Log.d(TAG, "SAF write success: $docUri")
+            true
+        } catch (e: Exception) {
+            // El documento puede no existir todavía: intentar crearlo
+            Log.w(TAG, "SAF write failed (${e.message}), trying to create file...")
+            try {
+                // Encontrar o crear la carpeta padre
+                val pathSegments = relativePath.split("/")
+                val fileName = pathSegments.last()
+                val parentRelative = pathSegments.dropLast(1).joinToString("/")
+                val parentDocId = if (parentRelative.isEmpty()) volumeId else "$volumeId:$parentRelative"
+                val parentUri = DocumentsContract.buildDocumentUriUsingTree(persistedUri, parentDocId)
+                val parentDir = DocumentFile.fromTreeUri(this, persistedUri)
+                    ?.let { root ->
+                        pathSegments.dropLast(1).fold(root) { dir, segment ->
+                            dir.findFile(segment) ?: dir.createDirectory(segment) ?: return false
+                        }
+                    } ?: return false
+
+                val newFile = parentDir.findFile(fileName)
+                    ?: parentDir.createFile("application/octet-stream", fileName)
+                    ?: return false
+
+                contentResolver.openOutputStream(newFile.uri, "wt")?.use { out ->
+                    out.write(bytes)
+                }
+                Log.d(TAG, "SAF create+write success: ${newFile.uri}")
+                true
+            } catch (ex: Exception) {
+                Log.e(TAG, "SAF create+write failed: ${ex.message}", ex)
+                false
+            }
         }
     }
 }

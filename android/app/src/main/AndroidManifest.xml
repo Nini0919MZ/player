@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
 
     <!-- PERMISOS IMPORTANTES -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
@@ -6,6 +7,14 @@
         android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29"/>
+    <!-- Fix Bug #3: MANAGE_EXTERNAL_STORAGE para editar archivos en SD Card/
+         volúmenes externos en Android 11+ (API 30+). Requiere aprobación en
+         Google Play pero es la única forma de escribir fuera de los directorios
+         de la app en Scoped Storage sin usar SAF por cada archivo individualmente.
+         ALTERNATIVA: usar SAF (ACTION_OPEN_DOCUMENT_TREE) — ver SdCardAccessService.
+         En Android ≤ 10 basta WRITE_EXTERNAL_STORAGE (declarado arriba). -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>

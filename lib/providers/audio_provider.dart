@@ -12,6 +12,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/artwork_cache_service.dart';
 
 import '../models/duration_state.dart';
 import '../services/audio_handler.dart';
@@ -188,6 +189,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _init() async {
     await _requestInitialPermissions();
+    await ArtworkCacheService.init();
     _isEpicenterEnabled = await StatePersistence.loadEpicenterEnabled();
 
     // Load tab count preference
@@ -1522,6 +1524,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (cached != null) return cached;
 
     try {
+      // Solución Bug #1: Guardamos los bytes de la carátula en un archivo
+      // temporal con esquema file://, que el sistema de notificaciones de
+      // Android puede leer sin restricciones de Scoped Storage.
+      // Los content://media/... URIs fallan en Android 10+ porque el proceso
+      // de MediaSession no tiene el mismo contexto de ContentProvider.
       final artwork = await _audioQuery.queryArtwork(
         song.id,
         ArtworkType.AUDIO,
@@ -1530,10 +1537,14 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       );
 
       if (artwork != null && artwork.isNotEmpty) {
-        final artUri = Uri.parse(
-            'content://media/external/audio/media/${song.id}/albumart');
-        _systemArtworkUriCache[song.id] = artUri;
-        return artUri;
+        final fileUri = await ArtworkCacheService.saveArtworkToTempFile(
+          song.id,
+          artwork,
+        );
+        if (fileUri != null) {
+          _systemArtworkUriCache[song.id] = fileUri;
+          return fileUri;
+        }
       }
     } catch (e) {
       debugPrint('Error checking artwork for MediaSession: $e');
@@ -1638,6 +1649,13 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         Permission.storage,
         Permission.notification,
       ].request();
+
+      // Fix Bug #3: En Android 11+ (API 30+), WRITE_EXTERNAL_STORAGE no aplica
+      // a volúmenes externos. Se necesita MANAGE_EXTERNAL_STORAGE O usar SAF.
+      // Solicitar MANAGE_EXTERNAL_STORAGE si no está concedido ya.
+      if (await Permission.manageExternalStorage.isDenied) {
+        await Permission.manageExternalStorage.request();
+      }
     }
   }
 
