@@ -109,6 +109,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Set<int> get favoriteIds => _favoriteIds;
   bool get isSyncing => _isSyncing;
 
+  // Tab count (UI)
+  int _tabCount = 3;
+  int get tabCount => _tabCount;
+
   // Concert Hall / Epicenter Getters
   AudioPreset get currentPreset => _currentPreset;
   bool get isEqEnabled => _isEqEnabled;
@@ -185,6 +189,14 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _init() async {
     await _requestInitialPermissions();
     _isEpicenterEnabled = await StatePersistence.loadEpicenterEnabled();
+
+    // Load tab count preference
+    try {
+      _tabCount = await StatePersistence.loadTabCount();
+    } catch (e) {
+      debugPrint('Error loading tab count: $e');
+      _tabCount = 3;
+    }
 
     // Load persisted epicenter params (apply defaults if missing)
     try {
@@ -749,6 +761,18 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
+  // Tab count setter
+  Future<void> setTabCount(int count) async {
+    if (count < 2 || count > 6) return;
+    _tabCount = count;
+    notifyListeners();
+    try {
+      await StatePersistence.saveTabCount(count);
+    } catch (e) {
+      debugPrint('Error saving tab count: $e');
+    }
+  }
+
   Future<void> _applyCurrentEffects() async {
     await _mediaChannel
         .invokeMethod('toggle_reverb', {'enabled': _isReverbEnabled});
@@ -1026,7 +1050,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _loadCurrentPlaylistFromScratch() async {
-    final mediaItems = await _songsToMediaItems(_currentPlaylist);
+    // Use a fast path for large playlists to avoid querying artwork per-item
+    // Lower threshold for faster responsiveness on slower devices
+    final useFast = _currentPlaylist.length > 20;
+    final mediaItems = await _songsToMediaItems(_currentPlaylist, fast: useFast);
 
     try {
       await _syncPlayerLoopMode();
@@ -1387,6 +1414,26 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       map['artist'] = newArtist;
       _currentSong = SongModel(map);
       _currentPlaylist[index] = _currentSong!;
+
+      // Propagate changes to main lists so library UI updates
+      final path = _currentSong!.data;
+      final allIdx = _songIndexByPath[path];
+      if (allIdx != null && allIdx >= 0 && allIdx < _allSongs.length) {
+        _allSongs[allIdx] = _currentSong!;
+      } else {
+        final found = _allSongs.indexWhere((s) => s.data == path || s.id == _currentSong!.id);
+        if (found != -1) _allSongs[found] = _currentSong!;
+      }
+
+      final gIdx = _globalQueue.indexWhere((s) => s.data == path || s.id == _currentSong!.id);
+      if (gIdx != -1) _globalQueue[gIdx] = _currentSong!;
+      final fIdx = _folderQueue.indexWhere((s) => s.data == path || s.id == _currentSong!.id);
+      if (fIdx != -1) _folderQueue[fIdx] = _currentSong!;
+
+      // Rebuild index and persist cache (best-effort)
+      _rebuildSongIndex();
+      unawaited(_saveLibraryCache());
+
       _replacePlaybackQueue(
         position: _player.position,
         shouldPlay: _player.playing,
@@ -1447,8 +1494,12 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     return false;
   }
 
-  Future<MediaItem> _songToMediaItem(SongModel s) async {
+  Future<MediaItem> _songToMediaItem(SongModel s, {bool fast = false}) async {
     String title = TitleUtils.getDisplayTitle(s);
+
+    final Uri artUri = fast
+        ? await _fallbackArtworkUri()
+        : await _systemArtworkUriForSong(s);
 
     return MediaItem(
       id: s.data,
@@ -1457,13 +1508,13 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       artist: (s.artist == null || s.artist == "<unknown>")
           ? "Artista Desconocido"
           : s.artist,
-      artUri: await _systemArtworkUriForSong(s),
+      artUri: artUri,
       duration: Duration(milliseconds: s.duration ?? 0),
     );
   }
 
-  Future<List<MediaItem>> _songsToMediaItems(List<SongModel> songs) {
-    return Future.wait(songs.map(_songToMediaItem));
+  Future<List<MediaItem>> _songsToMediaItems(List<SongModel> songs, {bool fast = false}) {
+    return Future.wait(songs.map((s) => _songToMediaItem(s, fast: fast)));
   }
 
   Future<Uri> _systemArtworkUriForSong(SongModel song) async {

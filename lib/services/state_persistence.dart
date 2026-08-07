@@ -126,4 +126,18 @@ class StatePersistence {
     await prefs.setStringList(
         _favoritesKey, favorites.map((id) => id.toString()).toList());
   }
+
+  // Tab count persistence (how many tabs to show in the main UI)
+  static const String _tabCountKey = 'main_tab_count';
+
+  static Future<int> loadTabCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_tabCountKey) ?? 3; // default 3 tabs (Carpetas, Canciones, Favoritos)
+  }
+
+  static Future<void> saveTabCount(int count) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_tabCountKey, count);
+  }
 }
+

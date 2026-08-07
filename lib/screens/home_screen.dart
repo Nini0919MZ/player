@@ -7,139 +7,178 @@ import 'search_screen.dart';
 import 'tabs/folders_tab.dart';
 import 'tabs/songs_tab.dart';
 import 'tabs/favorites_tab.dart';
+import 'tabs/settings_tab.dart';
+import 'tabs/albums_tab.dart';
+import 'tabs/playlists_tab.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text("Player",
-              style: TextStyle(fontWeight: FontWeight.bold)),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.search),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const SearchScreen()),
-                );
-              },
-            ),
-            Selector<AudioProvider, ({bool isIndexing, bool isSyncing})>(
-              selector: (_, p) => (isIndexing: p.isIndexing, isSyncing: p.isSyncing),
-              builder: (context, state, _) {
-                return PopupMenuButton<String>(
-                  icon: state.isSyncing
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.more_vert),
-                  onSelected: (value) async {
-                    if (value != 'refresh_library') return;
-                    final result =
-                        await context.read<AudioProvider>().refreshLibrary();
-                    if (!context.mounted) return;
-                    if (result == null || !result.hasChanges) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Biblioteca ya actualizada.'),
-                          duration: Duration(seconds: 2),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    } else {
-                      final lines = <String>[];
-                      if (result.toInsert.isNotEmpty)
-                        lines.add('+ ${result.toInsert.length} agregadas');
-                      if (result.toUpdate.isNotEmpty)
-                        lines.add('~ ${result.toUpdate.length} modificadas');
-                      if (result.toDelete.isNotEmpty)
-                        lines.add('- ${result.toDelete.length} eliminadas');
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Biblioteca actualizada\n${lines.join("  ")}',
-                          ),
-                          duration: const Duration(seconds: 3),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    }
-                  },
-                  itemBuilder: (context) => [
-                    PopupMenuItem<String>(
-                      value: 'refresh_library',
-                      enabled: !state.isIndexing && !state.isSyncing,
-                      child: const Text('Refrescar carpetas/elementos'),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ],
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: "Carpetas"),
-              Tab(text: "Canciones"),
-              Tab(text: "Favoritos"),
-            ],
-          ),
-        ),
-        body: Column(
-          children: [
-            Consumer<AudioProvider>(
-              builder: (context, audioProvider, _) {
-                if (audioProvider.isLoading) return const SizedBox.shrink();
-                if (audioProvider.isIndexing) {
-                  return _InlineIndexingBar(audioProvider: audioProvider);
-                }
-                if (audioProvider.isSyncing) {
-                  return const _SyncingBanner();
-                }
-                return const SizedBox.shrink();
-              },
-            ),
-            Expanded(
-              child: Selector<AudioProvider, bool>(
-                selector: (_, audioProvider) => audioProvider.isLoading,
-                builder: (context, isLoading, _) {
-                  if (isLoading) {
-                    return Consumer<AudioProvider>(
-                      builder: (context, audioProvider, _) {
-                        return _InitialIndexingView(
-                          audioProvider: audioProvider,
-                        );
-                      },
+    return Consumer<AudioProvider>(
+      builder: (context, audioProvider, _) {
+        final tabCount = audioProvider.tabCount.clamp(2, 6);
+        return DefaultTabController(
+          key: ValueKey(tabCount),
+          length: tabCount,
+          child: Scaffold(
+            appBar: AppBar(
+              title: const Text("Player",
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.search),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SearchScreen()),
                     );
-                  }
-                  return const TabBarView(
-                    children: [
-                      FoldersTab(),
-                      SongsTab(),
-                      FavoritesTab(),
-                    ],
-                  );
-                },
+                  },
+                ),
+                Selector<AudioProvider, ({bool isIndexing, bool isSyncing})>(
+                  selector: (_, p) => (isIndexing: p.isIndexing, isSyncing: p.isSyncing),
+                  builder: (context, state, _) {
+                    return PopupMenuButton<String>(
+                      icon: state.isSyncing
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.more_vert),
+                      onSelected: (value) async {
+                        if (value == 'refresh_library') {
+                          final result = await context.read<AudioProvider>().refreshLibrary();
+                          if (!context.mounted) return;
+                          if (result == null || !result.hasChanges) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Biblioteca ya actualizada.'),
+                                duration: Duration(seconds: 2),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          } else {
+                            final lines = <String>[];
+                            if (result.toInsert.isNotEmpty) lines.add('+ ${result.toInsert.length} agregadas');
+                            if (result.toUpdate.isNotEmpty) lines.add('~ ${result.toUpdate.length} modificadas');
+                            if (result.toDelete.isNotEmpty) lines.add('- ${result.toDelete.length} eliminadas');
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Biblioteca actualizada\n${lines.join("  ")}'),
+                                duration: const Duration(seconds: 3),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
+                        } else if (value == 'settings') {
+                          // Open settings screen from popup
+                          if (!context.mounted) return;
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const SettingsTab()),
+                          );
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        PopupMenuItem<String>(
+                          value: 'refresh_library',
+                          enabled: !state.isIndexing && !state.isSyncing,
+                          child: const Text('Refrescar carpetas/elementos'),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'settings',
+                          child: Text('Configuración'),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(kToolbarHeight),
+                child: Consumer<AudioProvider>(
+                  builder: (context, audioProvider, _) {
+                    final folderCount = audioProvider.sortedFolderPaths.length;
+                    final songCount = audioProvider.allSongs.length;
+                    final favCount = audioProvider.favoriteIds.length;
+                    final tabCount = audioProvider.tabCount.clamp(2, 6);
+
+                    final tabs = <Tab>[];
+                    tabs.add(Tab(text: "Carpetas (${folderCount})"));
+                    if (tabCount >= 2) tabs.add(Tab(text: "Canciones (${songCount})"));
+                    if (tabCount >= 3) tabs.add(Tab(text: "Favoritos (${favCount})"));
+                    // Settings moved to the three-dot menu per user request
+                    if (tabCount >= 4) {
+                      // keep slot for Albums/Playlists if user selected more tabs
+                    }
+                    if (tabCount >= 5) tabs.add(Tab(text: "Álbumes (${audioProvider.allAlbums.length})"));
+                    if (tabCount >= 6) tabs.add(const Tab(text: "Playlists"));
+
+                    return TabBar(tabs: tabs);
+                  },
+                ),
               ),
             ),
-            Selector<AudioProvider, bool>(
-              selector: (_, audioProvider) =>
-                  audioProvider.currentPlaylist.isNotEmpty,
-              builder: (context, hasPlaylist, _) {
-                return hasPlaylist
-                    ? const MiniPlayer()
-                    : const SizedBox.shrink();
-              },
+            body: Column(
+              children: [
+                Consumer<AudioProvider>(
+                  builder: (context, audioProvider, _) {
+                    if (audioProvider.isLoading) return const SizedBox.shrink();
+                    if (audioProvider.isIndexing) {
+                      return _InlineIndexingBar(audioProvider: audioProvider);
+                    }
+                    if (audioProvider.isSyncing) {
+                      return const _SyncingBanner();
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+                Expanded(
+                  child: Selector<AudioProvider, bool>(
+                    selector: (_, audioProvider) => audioProvider.isLoading,
+                    builder: (context, isLoading, _) {
+                      if (isLoading) {
+                        return Consumer<AudioProvider>(
+                          builder: (context, audioProvider, _) {
+                            return _InitialIndexingView(
+                              audioProvider: audioProvider,
+                            );
+                          },
+                        );
+                      }
+
+                      // Build TabBarView dynamically to match selected tab count
+                      final tabCount = context.read<AudioProvider>().tabCount.clamp(2, 6);
+                      final views = <Widget>[];
+
+                      // 1: Carpetas
+                      views.add(const FoldersTab());
+                      if (tabCount >= 2) views.add(const SongsTab());
+                      if (tabCount >= 3) views.add(const FavoritesTab());
+                      // Settings removed from TabBar; accessible via three-dot menu
+                      if (tabCount >= 4) {
+                        // reserved slot (no-op)
+                      }
+                      if (tabCount >= 5) views.add(const AlbumsTab());
+                      if (tabCount >= 6) views.add(const PlaylistsTab());
+
+                      return TabBarView(children: views);
+                    },
+                  ),
+                ),
+                Selector<AudioProvider, bool>(
+                  selector: (_, audioProvider) => audioProvider.currentPlaylist.isNotEmpty,
+                  builder: (context, hasPlaylist, _) {
+                    return hasPlaylist ? const MiniPlayer() : const SizedBox.shrink();
+                  },
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

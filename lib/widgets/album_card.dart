@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 import '../providers/audio_provider.dart';
+import '../utils/title_utils.dart';
 
 class AlbumCard extends StatefulWidget {
   final SongModel song;
@@ -90,8 +91,13 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
                     quality: 100,
                     nullArtworkWidget: Container(
                       color: const Color(0xFF222222),
-                      child: const Center(
-                        child: Icon(Icons.music_note, color: Colors.white12, size: 48),
+                      child: Image.asset(
+                        'assets/icon/music_note_fallback.png',
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        height: double.infinity,
+                        color: Colors.white24,
+                        colorBlendMode: BlendMode.modulate,
                       ),
                     ),
                   ),
@@ -113,35 +119,52 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 14),
+              // Simplified controls: Play and Shuffle (operate on the whole album)
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  IconButton(
-                    iconSize: 22,
-                    icon: Icon(
-                      isFavorite ? Icons.favorite : Icons.favorite_border,
-                      color: isFavorite ? Colors.red : Colors.grey[400],
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        // Build album song list using TitleUtils.getAlbumKey
+                        final albumKey = TitleUtils.getAlbumKey(widget.song);
+                        final albumSongs = audioProvider.allSongs
+                            .where((s) => TitleUtils.getAlbumKey(s) == albumKey)
+                            .toList();
+                        if (albumSongs.isEmpty) {
+                          audioProvider.playPlaylist([widget.song], 0);
+                          return;
+                        }
+                        final startIndex = albumSongs.indexWhere((s) => s.id == widget.song.id);
+                        audioProvider.playPlaylist(albumSongs, startIndex == -1 ? 0 : startIndex);
+                      },
+                      icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
+                      label: const Text('Play'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black,
+                      ),
                     ),
-                    onPressed: () => audioProvider.toggleFavorite(widget.song),
                   ),
-                  Container(
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        final albumKey = TitleUtils.getAlbumKey(widget.song);
+                        final albumSongs = audioProvider.allSongs
+                            .where((s) => TitleUtils.getAlbumKey(s) == albumKey)
+                            .toList();
+                        if (albumSongs.isEmpty) {
+                          audioProvider.playPlaylistShuffled([widget.song]);
+                          return;
+                        }
+                        audioProvider.playPlaylistShuffled(albumSongs);
+                      },
+                      icon: const Icon(Icons.shuffle, color: Colors.white),
+                      label: const Text('Shuffle', style: TextStyle(color: Colors.white)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.white24),
+                      ),
                     ),
-                    padding: const EdgeInsets.all(8),
-                    child: Icon(
-                      isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                      color: Colors.black,
-                      size: 26,
-                    ),
-                  ),
-                  IconButton(
-                    iconSize: 22,
-                    icon: Icon(Icons.more_vert_rounded, color: Colors.grey[400]),
-                    onPressed: () {
-                      // Options menu could go here
-                    },
                   ),
                 ],
               ),
