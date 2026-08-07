@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../providers/audio_provider.dart';
 import '../services/state_persistence.dart';
 import '../utils/title_utils.dart';
+import 'song_info_modal.dart';
 
 void showOptionsMenu(BuildContext context, AudioProvider audioProvider) {
   showModalBottomSheet(
@@ -41,6 +42,16 @@ class _OptionsMenuContent extends StatelessWidget {
                   color: Colors.grey[600],
                   borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 20),
+          ListTile(
+            leading: const Icon(Icons.info_outline_rounded,
+                color: Colors.white, size: 28),
+            title: const Text("Información de archivo",
+                style: TextStyle(color: Colors.white, fontSize: 18)),
+            onTap: () {
+              Navigator.pop(context);
+              showSongInfo(context, song);
+            },
+          ),
           ListTile(
             leading:
                 const Icon(Icons.edit_outlined, color: Colors.white, size: 28),

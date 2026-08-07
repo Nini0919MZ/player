@@ -8,11 +8,10 @@ import java.util.Map;
 public class MediaUtils {
 
     /**
-     * Extrae metadata basica y tecnica de un archivo de audio.
-     * Si no se encuentran etiquetas, devuelve el nombre del archivo como titulo.
+     * Extrae metadata básica y técnica completa de un archivo de audio.
      *
      * @param path Ruta absoluta del archivo de audio.
-     * @return Un mapa con title, artist, bitrate, mimeType y format.
+     * @return Un mapa con title, artist, albumArtist, album, composer, genre, year, track, bitrate, mimeType, sampleRate, bitsPerSample, y format.
      */
     public static Map<String, String> getSongMetadata(String path) {
         HashMap<String, String> metadata = new HashMap<>();
@@ -25,21 +24,40 @@ public class MediaUtils {
 
             String title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE);
             String artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST);
+            String albumArtist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST);
+            String album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM);
+            String composer = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_COMPOSER);
+            String genre = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE);
+            String year = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR);
+            if (year == null || year.isEmpty()) {
+                year = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE);
+            }
+            String track = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER);
             String bitrate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE);
             String mimeType = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE);
 
-            if (title == null || title.trim().isEmpty()) {
-                title = file.getName();
+            String sampleRate = null;
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                sampleRate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_SAMPLERATE);
             }
 
-            if (artist == null || artist.trim().isEmpty()) {
-                artist = "Artista Desconocido";
+            String bitsPerSample = null;
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                bitsPerSample = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITS_PER_SAMPLE);
             }
 
-            metadata.put("title", title);
-            metadata.put("artist", artist);
-            metadata.put("bitrate", bitrate == null ? "" : bitrate);
-            metadata.put("mimeType", mimeType == null ? "" : mimeType);
+            metadata.put("title", title != null ? title : file.getName());
+            metadata.put("artist", artist != null ? artist : "Artista Desconocido");
+            metadata.put("albumArtist", albumArtist != null ? albumArtist : "");
+            metadata.put("album", album != null ? album : "");
+            metadata.put("composer", composer != null ? composer : "");
+            metadata.put("genre", genre != null ? genre : "");
+            metadata.put("year", year != null ? year : "");
+            metadata.put("track", track != null ? track : "");
+            metadata.put("bitrate", bitrate != null ? bitrate : "");
+            metadata.put("mimeType", mimeType != null ? mimeType : "");
+            metadata.put("sampleRate", sampleRate != null ? sampleRate : "");
+            metadata.put("bitsPerSample", bitsPerSample != null ? bitsPerSample : "");
             metadata.put("format", format);
         } catch (Exception e) {
             e.printStackTrace();

@@ -294,6 +294,10 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
             icon: const Icon(Icons.more_vert, color: Colors.white, size: 26),
             color: const Color(0xFF252525),
             onSelected: (value) async {
+              if (value == 'info_archivo' && context.mounted) {
+                showSongInfo(context, song);
+                return;
+              }
               if (value == 'modo_auto') {
                 await _toggleModoAuto(audioProvider);
                 return;
@@ -307,6 +311,18 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
               }
             },
             itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'info_archivo',
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline_rounded,
+                        size: 20, color: Colors.white),
+                    SizedBox(width: 10),
+                    Text('Información de archivo',
+                        style: TextStyle(color: Colors.white)),
+                  ],
+                ),
+              ),
               PopupMenuItem(
                 value: 'modo_auto',
                 child: Row(

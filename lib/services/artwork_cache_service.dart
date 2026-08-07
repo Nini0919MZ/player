@@ -57,6 +57,17 @@ class ArtworkCacheService {
     }
   }
 
+  static Future<File?> getArtworkFile(int songId) async {
+    try {
+      final dir = _cacheDir ?? await _ensureDir();
+      final file = File('${dir.path}/artwork_$songId.png');
+      if (await file.exists() && await file.length() > 0) {
+        return file;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   /// Genera un URI `file://` a partir de bytes de artwork (Uint8List) usando
   /// un nombre de archivo derivado de un identificador único [key] (ej: ruta
   /// del archivo de audio o ID de canción).
