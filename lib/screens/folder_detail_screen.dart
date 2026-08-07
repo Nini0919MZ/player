@@ -1,9 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/audio_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/folder_info_modal.dart';
 import '../../widgets/mini_player.dart';
 import '../../widgets/song_list_tile.dart';
 import 'search_screen.dart';
@@ -76,6 +78,10 @@ class FolderDetailScreen extends StatelessWidget {
             onSelected: (value) {
               if (value == 'reproducir') {
                 audioProvider.playPlaylist(currentFolderSongs, 0);
+              } else if (value == 'reproducir_shuffle') {
+                audioProvider.playPlaylistShuffled(currentFolderSongs);
+              } else if (value == 'info') {
+                showFolderInfo(context, folderName, folderPath, currentFolderSongs);
               } else if (value == 'añadir') {
                 audioProvider.addAllToQueue(currentFolderSongs);
               } else if (value == 'delete') {
@@ -83,8 +89,10 @@ class FolderDetailScreen extends StatelessWidget {
               }
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(value: 'reproducir', child: Text('Reproducir')),
-              const PopupMenuItem(value: 'añadir', child: Text('Añadir a lista')),
+              const PopupMenuItem(value: 'reproducir', child: Text('Reproducir', style: TextStyle(color: Colors.white))),
+              const PopupMenuItem(value: 'reproducir_shuffle', child: Text('Reproducir aleatorio', style: TextStyle(color: Colors.white))),
+              const PopupMenuItem(value: 'info', child: Text('Información de la carpeta', style: TextStyle(color: Colors.white))),
+              const PopupMenuItem(value: 'añadir', child: Text('Añadir a lista', style: TextStyle(color: Colors.white))),
               const PopupMenuDivider(),
               const PopupMenuItem(value: 'delete', child: Text('Borrar carpeta', style: TextStyle(color: Colors.red))),
             ],
@@ -191,23 +199,38 @@ class FolderDetailScreen extends StatelessWidget {
   void _showDeleteConfirmation(BuildContext context, AudioProvider audioProvider, String name, String path, List<SongModel> songs) {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.surfaceColor,
         title: const Text('Eliminar carpeta', style: TextStyle(color: Colors.white)),
         content: Text(
-          '¿Estás seguro de que quieres borrar la carpeta "$name" de la lista? (No se borrarán los archivos físicos)',
+          '¿Estás seguro de que quieres borrar la carpeta "$name"? Se eliminarán de forma irreversible TODOS los archivos físicos dentro de ella.',
           style: const TextStyle(color: AppTheme.textSecondary),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('CANCELAR', style: TextStyle(color: AppTheme.primaryColor)),
           ),
           TextButton(
-            onPressed: () {
-              audioProvider.deleteFolder(path);
-              Navigator.pop(context);
-              Navigator.pop(context); // Close detail screen as it's being "deleted"
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                final dir = Directory(path);
+                if (dir.existsSync()) {
+                  dir.deleteSync(recursive: true);
+                }
+                audioProvider.deleteFolder(path);
+                if (context.mounted) {
+                  Navigator.pop(context); // Close detail screen as it's being "deleted"
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('Error al eliminar: $e', style: const TextStyle(color: Colors.white)),
+                    backgroundColor: Colors.red,
+                  ));
+                }
+              }
             },
             child: const Text('ELIMINAR', style: TextStyle(color: Colors.red)),
           ),

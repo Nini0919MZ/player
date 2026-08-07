@@ -1,8 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
 import '../../theme/app_theme.dart';
+import 'folder_info_modal.dart';
 
 class FolderListTile extends StatelessWidget {
   final String folderName;
@@ -52,6 +54,11 @@ class FolderListTile extends StatelessWidget {
           final audioProvider = Provider.of<AudioProvider>(context, listen: false);
           if (value == 'reproducir') {
             audioProvider.playPlaylist(songs, 0);
+          } else if (value == 'aleatorio') {
+            audioProvider.playPlaylistShuffled(songs);
+          } else if (value == 'info') {
+            final folderPath = songs.isNotEmpty ? songs.first.data.replaceAll(songs.first.displayName, "") : folderName;
+            showFolderInfo(context, folderName, folderPath, songs);
           } else if (value == 'añadir') {
             audioProvider.addAllToQueue(songs);
           } else if (value == 'delete') {
@@ -62,6 +69,14 @@ class FolderListTile extends StatelessWidget {
           const PopupMenuItem<String>(
             value: 'reproducir',
             child: Text('Reproducir'),
+          ),
+          const PopupMenuItem<String>(
+            value: 'aleatorio',
+            child: Text('Reproducir en aleatorio'),
+          ),
+          const PopupMenuItem<String>(
+            value: 'info',
+            child: Text('Información de la carpeta'),
           ),
           const PopupMenuItem<String>(
             value: 'añadir',
@@ -85,7 +100,7 @@ class FolderListTile extends StatelessWidget {
         backgroundColor: AppTheme.surfaceColor,
         title: const Text('Eliminar carpeta', style: TextStyle(color: Colors.white)),
         content: Text(
-          '¿Estás seguro de que quieres borrar la carpeta "$folderName" de la lista? (No se borrarán los archivos físicos)',
+          '¿Estás seguro de que quieres borrar físicamente la carpeta "$folderName" y todos sus archivos? Esta acción no se puede deshacer.',
           style: const TextStyle(color: AppTheme.textSecondary),
         ),
         actions: [
@@ -94,12 +109,25 @@ class FolderListTile extends StatelessWidget {
             child: const Text('CANCELAR', style: TextStyle(color: AppTheme.primaryColor)),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
+              Navigator.pop(context); // Close dialog first
               if (songs.isNotEmpty) {
                 final folderPath = songs.first.data.replaceAll(songs.first.displayName, "");
-                audioProvider.deleteFolder(folderPath);
+                try {
+                  final dir = Directory(folderPath);
+                  if (dir.existsSync()) {
+                    dir.deleteSync(recursive: true);
+                    await audioProvider.refreshLibrary();
+                  }
+                } catch (e) {
+                  debugPrint("Error deleting folder: $e");
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error al borrar la carpeta: $e')),
+                    );
+                  }
+                }
               }
-              Navigator.pop(context);
             },
             child: const Text('ELIMINAR', style: TextStyle(color: Colors.red)),
           ),

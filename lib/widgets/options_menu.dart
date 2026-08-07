@@ -3,12 +3,13 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:audiotags/audiotags.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:on_audio_query/on_audio_query.dart';
 import '../providers/audio_provider.dart';
 import '../services/state_persistence.dart';
 import '../utils/title_utils.dart';
 import 'song_info_modal.dart';
 
-void showOptionsMenu(BuildContext context, AudioProvider audioProvider) {
+void showOptionsMenu(BuildContext context, AudioProvider audioProvider, {SongModel? song}) {
   showModalBottomSheet(
     context: context,
     backgroundColor: const Color(0xFF222222),
@@ -16,19 +17,20 @@ void showOptionsMenu(BuildContext context, AudioProvider audioProvider) {
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (context) {
-      return _OptionsMenuContent(audioProvider: audioProvider);
+      return _OptionsMenuContent(audioProvider: audioProvider, song: song);
     },
   );
 }
 
 class _OptionsMenuContent extends StatelessWidget {
   final AudioProvider audioProvider;
-  const _OptionsMenuContent({required this.audioProvider});
+  final SongModel? song;
+  const _OptionsMenuContent({required this.audioProvider, this.song});
 
   @override
   Widget build(BuildContext context) {
-    final song = audioProvider.currentSong;
-    if (song == null) return const SizedBox.shrink();
+    final targetSong = song ?? audioProvider.currentSong;
+    if (targetSong == null) return const SizedBox.shrink();
 
     return SafeArea(
       child: Column(
@@ -49,7 +51,7 @@ class _OptionsMenuContent extends StatelessWidget {
                 style: TextStyle(color: Colors.white, fontSize: 18)),
             onTap: () {
               Navigator.pop(context);
-              showSongInfo(context, song);
+              showSongInfo(context, targetSong);
             },
           ),
           ListTile(
@@ -59,10 +61,7 @@ class _OptionsMenuContent extends StatelessWidget {
                 style: TextStyle(color: Colors.white, fontSize: 18)),
             onTap: () {
               Navigator.pop(context);
-              showDialog(
-                  context: context,
-                  builder: (context) =>
-                      _EditTagDialog(provider: audioProvider));
+              showEditTagDialog(context, audioProvider, song: targetSong);
             },
           ),
           ListTile(
@@ -91,7 +90,7 @@ class _OptionsMenuContent extends StatelessWidget {
                 style: TextStyle(color: Colors.redAccent, fontSize: 18)),
             onTap: () {
               Navigator.pop(context);
-              _showDeleteDialog(context, audioProvider);
+              _showDeleteDialog(context, audioProvider, targetSong);
             },
           ),
           const SizedBox(height: 10),
@@ -100,9 +99,7 @@ class _OptionsMenuContent extends StatelessWidget {
     );
   }
 
-  void _showDeleteDialog(BuildContext context, AudioProvider provider) {
-    final song = provider.currentSong;
-    if (song == null) return;
+  void _showDeleteDialog(BuildContext context, AudioProvider provider, SongModel song) {
 
     showDialog(
       context: context,
@@ -346,9 +343,36 @@ class _ParamSlider extends StatelessWidget {
 
 // ─── Full ID3 Tag Editor ──────────────────────────────────────────────────────
 
+void showEditTagDialog(
+  BuildContext context,
+  AudioProvider provider, {
+  SongModel? song,
+  bool isAlbumEdit = false,
+  List<SongModel>? albumSongs,
+}) {
+  showDialog(
+    context: context,
+    builder: (context) => _EditTagDialog(
+      provider: provider,
+      song: song,
+      isAlbumEdit: isAlbumEdit,
+      albumSongs: albumSongs,
+    ),
+  );
+}
+
 class _EditTagDialog extends StatefulWidget {
   final AudioProvider provider;
-  const _EditTagDialog({required this.provider});
+  final SongModel? song;
+  final bool isAlbumEdit;
+  final List<SongModel>? albumSongs;
+
+  const _EditTagDialog({
+    required this.provider,
+    this.song,
+    this.isAlbumEdit = false,
+    this.albumSongs,
+  });
 
   @override
   State<_EditTagDialog> createState() => _EditTagDialogState();
@@ -363,6 +387,9 @@ class _EditTagDialogState extends State<_EditTagDialog> {
   late final TextEditingController _genre;
   late final TextEditingController _year;
   late final TextEditingController _track;
+  
+  bool _isSaving = false;
+
   File? _newCoverFile;
   Uint8List? _existingCoverBytes;
   List<Picture> _existingPictures = [];
@@ -370,10 +397,10 @@ class _EditTagDialogState extends State<_EditTagDialog> {
   @override
   void initState() {
     super.initState();
-    final song = widget.provider.currentSong!;
+    final song = widget.song ?? widget.provider.currentSong!;
     final artistText =
         (song.artist == "<unknown>" || song.artist == null) ? "" : song.artist!;
-    _title = TextEditingController(text: TitleUtils.getDisplayTitle(song));
+    _title = TextEditingController(text: widget.isAlbumEdit ? "" : TitleUtils.getDisplayTitle(song));
     _album = TextEditingController(text: song.album ?? "");
     _artist = TextEditingController(text: artistText);
     _albumArtist = TextEditingController();
@@ -417,8 +444,10 @@ class _EditTagDialogState extends State<_EditTagDialog> {
       _composer,
       _genre,
       _year,
-      _track
-    ]) c.dispose();
+      _track,
+    ]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -428,9 +457,10 @@ class _EditTagDialogState extends State<_EditTagDialog> {
   }
 
   Future<void> _save() async {
-    Navigator.pop(context);
+    setState(() => _isSaving = true);
+    
     try {
-      final song = widget.provider.currentSong!;
+      final songsToEdit = widget.isAlbumEdit ? (widget.albumSongs ?? []) : [widget.song ?? widget.provider.currentSong!];
 
       List<Picture> pics = [];
       Uint8List? coverBytesForCache;
@@ -445,50 +475,62 @@ class _EditTagDialogState extends State<_EditTagDialog> {
           )
         ];
       } else if (_existingPictures.isNotEmpty) {
-        // PRESERVAR CARÁTULA EXISTENTE: Reinyectar las fotos leídas de las etiquetas
         pics = _existingPictures;
         coverBytesForCache = _existingCoverBytes;
-      } else {
-        // Fallback por si la lectura asíncrona no había terminado aún
-        final tagRead = await AudioTags.read(song.data);
-        if (tagRead != null && tagRead.pictures.isNotEmpty) {
-          pics = tagRead.pictures;
-          coverBytesForCache = pics.first.bytes;
-        }
       }
 
-      final tag = Tag(
-        title: _title.text.trim().isEmpty ? null : _title.text.trim(),
-        album: _album.text.trim().isEmpty ? null : _album.text.trim(),
-        artist: _artist.text.trim().isEmpty ? null : _artist.text.trim(),
-        genre: _genre.text.trim().isEmpty ? null : _genre.text.trim(),
-        year: int.tryParse(_year.text),
-        pictures: pics,
-      );
+      for (int i = 0; i < songsToEdit.length; i++) {
+        final currentSong = songsToEdit[i];
+        
+        List<Picture> currentPics = List.from(pics);
+        String? originalTitle;
+        int? originalDuration;
+        try {
+          final tagRead = await AudioTags.read(currentSong.data);
+          if (tagRead != null) {
+            originalTitle = tagRead.title;
+            originalDuration = tagRead.duration;
+            if (currentPics.isEmpty && tagRead.pictures.isNotEmpty) {
+              currentPics = tagRead.pictures;
+              if (i == 0) coverBytesForCache = currentPics.first.bytes;
+            }
+          }
+        } catch (_) {}
+        
+        final newTitle = (!widget.isAlbumEdit && _title.text.trim().isNotEmpty) ? _title.text.trim() : originalTitle;
 
-      // 1. Escribir metadatos en el archivo físico
-      await AudioTags.write(song.data, tag);
+        final tag = Tag(
+          title: newTitle,
+          album: _album.text.trim().isEmpty ? null : _album.text.trim(),
+          artist: _artist.text.trim().isEmpty ? null : _artist.text.trim(),
+          genre: _genre.text.trim().isEmpty ? null : _genre.text.trim(),
+          year: int.tryParse(_year.text),
+          duration: originalDuration,
+          pictures: currentPics,
+        );
 
-      // 2. Actualizar AudioProvider, MediaItem y notificación del sistema en tiempo real
-      await widget.provider.updateSongMetadata(
-        song,
-        newTitle: _title.text.trim().isEmpty ? song.title : _title.text.trim(),
-        newArtist: _artist.text.trim().isEmpty
-            ? (song.artist ?? 'Artista Desconocido')
-            : _artist.text.trim(),
-        newAlbum: _album.text.trim().isEmpty ? song.album : _album.text.trim(),
-        newGenre: _genre.text.trim().isEmpty ? song.genre : _genre.text.trim(),
-        newCoverBytes: coverBytesForCache,
-      );
+        await AudioTags.write(currentSong.data, tag);
+
+        await widget.provider.updateSongMetadata(
+          currentSong,
+          newTitle: newTitle ?? currentSong.title,
+          newArtist: _artist.text.trim().isEmpty ? (currentSong.artist ?? 'Artista Desconocido') : _artist.text.trim(),
+          newAlbum: _album.text.trim().isEmpty ? currentSong.album : _album.text.trim(),
+          newGenre: _genre.text.trim().isEmpty ? currentSong.genre : _genre.text.trim(),
+          newCoverBytes: coverBytesForCache,
+        );
+      }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text("Etiquetas guardadas y actualizadas en vivo.",
-                style: TextStyle(color: Colors.white)),
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(widget.isAlbumEdit ? "Álbum actualizado correctamente." : "Etiquetas guardadas.",
+                style: const TextStyle(color: Colors.white)),
             backgroundColor: Colors.green));
       }
     } catch (e) {
       if (mounted) {
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text("Error al guardar: $e",
                 style: const TextStyle(color: Colors.white)),
@@ -497,12 +539,13 @@ class _EditTagDialogState extends State<_EditTagDialog> {
     }
   }
 
-  Widget _field(TextEditingController ctrl, String label) {
+  Widget _field(TextEditingController ctrl, String label, {bool enabled = true}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4.0),
       child: TextField(
         controller: ctrl,
-        style: const TextStyle(color: Colors.white),
+        enabled: enabled,
+        style: TextStyle(color: enabled ? Colors.white : Colors.white30),
         decoration: InputDecoration(
           labelText: label,
           labelStyle: const TextStyle(color: Colors.grey),
@@ -526,8 +569,8 @@ class _EditTagDialogState extends State<_EditTagDialog> {
 
     return AlertDialog(
       backgroundColor: const Color(0xFF2A2A2A),
-      title: const Text("Editor de etiquetas",
-          style: TextStyle(color: Colors.white, fontSize: 22)),
+      title: Text(widget.isAlbumEdit ? "Editar Álbum Masivo" : "Editor de etiquetas",
+          style: const TextStyle(color: Colors.white, fontSize: 22)),
       contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
       content: SizedBox(
         width: double.maxFinite,
@@ -535,9 +578,14 @@ class _EditTagDialogState extends State<_EditTagDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (_isSaving)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 20),
+                  child: Center(child: CircularProgressIndicator(color: Colors.white)),
+                ),
               // Cover art picker
               GestureDetector(
-                onTap: _pickCover,
+                onTap: _isSaving ? null : _pickCover,
                 child: Container(
                   width: 100,
                   height: 100,
@@ -565,15 +613,16 @@ class _EditTagDialogState extends State<_EditTagDialog> {
                       : null,
                 ),
               ),
-              _field(_title, "Título"),
-              _field(_album, "Álbum"),
-              _field(_artist, "Artista"),
-              _field(_albumArtist, "Artista del álbum"),
-              _field(_composer, "Compositor"),
-              _field(_genre, "Género"),
-              _field(_year, "Año"),
-              _field(_track,
-                  "Track (4 para la pista 4 o 2004 para CD 2, pista 4)"),
+              if (!widget.isAlbumEdit) _field(_title, "Título", enabled: !_isSaving),
+              _field(_album, "Álbum", enabled: !_isSaving),
+              _field(_artist, "Artista", enabled: !_isSaving),
+              _field(_albumArtist, "Artista del álbum", enabled: !_isSaving),
+              _field(_composer, "Compositor", enabled: !_isSaving),
+              _field(_genre, "Género", enabled: !_isSaving),
+              _field(_year, "Año", enabled: !_isSaving),
+              
+              if (!widget.isAlbumEdit)
+                _field(_track, "Track (Ej: 4)", enabled: !_isSaving),
               const SizedBox(height: 8),
             ],
           ),
@@ -581,11 +630,11 @@ class _EditTagDialogState extends State<_EditTagDialog> {
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: _isSaving ? null : () => Navigator.pop(context),
             child:
                 const Text("cancelar", style: TextStyle(color: Colors.grey))),
         ElevatedButton(
-          onPressed: _save,
+          onPressed: _isSaving ? null : _save,
           style: ElevatedButton.styleFrom(backgroundColor: Colors.grey[700]),
           child: const Text("Guardar", style: TextStyle(color: Colors.white)),
         ),
