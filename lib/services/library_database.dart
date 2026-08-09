@@ -139,6 +139,28 @@ class LibraryDatabase {
     await batch.commit(noResult: true);
   }
 
+  Future<void> upsertSongsBatched(List<Map<dynamic, dynamic>> songs, {int batchSize = 500}) async {
+    if (songs.isEmpty) return;
+    final db = await database;
+    for (var i = 0; i < songs.length; i += batchSize) {
+      final end = (i + batchSize).clamp(0, songs.length);
+      final chunk = songs.sublist(i, end);
+      await db.transaction((txn) async {
+        final batch = txn.batch();
+        for (final song in chunk) {
+          final path = song["_data"] as String?;
+          if (path == null) continue;
+          batch.insert(
+            tableLibraryIndex,
+            _songModelMapToRow(song, p.dirname(path)),
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+        await batch.commit(noResult: true);
+      });
+    }
+  }
+
   Future<List<Map<String, dynamic>>> getAllAsSongModelMaps() async {
     final db = await database;
     final rows = await db.query(

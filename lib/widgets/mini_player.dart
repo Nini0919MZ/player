@@ -7,6 +7,7 @@ import 'package:path/path.dart' as path;
 import '../models/duration_state.dart';
 import '../providers/audio_provider.dart';
 import '../theme/app_theme.dart';
+import '../widgets/smart_artwork.dart';
 import '../widgets/marquee_text.dart';
 import '../utils/title_utils.dart';
 import '../widgets/options_menu.dart';
@@ -53,18 +54,11 @@ class MiniPlayer extends StatelessWidget {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(4.0),
-                      child: QueryArtworkWidget(
-                        id: song.id,
+                      child: SmartArtwork(
+                        albumId: song.id,
+                        songPath: song.data,
                         type: ArtworkType.AUDIO,
-                        artworkHeight: 50,
-                        artworkWidth: 50,
-                        nullArtworkWidget: Container(
-                          height: 50,
-                          width: 50,
-                          color: Colors.grey[900],
-                          child:
-                              const Icon(Icons.music_note, color: Colors.grey),
-                        ),
+                        size: 50,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -465,33 +459,11 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                         audioProvider.player
                             .seek(currentPos + const Duration(seconds: 10));
                       },
-                      child: QueryArtworkWidget(
-                        id: song.id,
+                      child: SmartArtwork(
+                        albumId: song.id,
+                        songPath: song.data,
                         type: ArtworkType.AUDIO,
                         size: 1000,
-                        artworkHeight: double.infinity,
-                        artworkWidth: double.infinity,
-                        artworkFit: BoxFit.contain,
-                        nullArtworkWidget: Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                Colors.grey[800]!,
-                                Colors.grey[900]!,
-                                Colors.black,
-                              ],
-                            ),
-                          ),
-                          child: Center(
-                            child: Icon(
-                              Icons.music_note_rounded,
-                              color: Colors.white.withValues(alpha: 0.15),
-                              size: 160,
-                            ),
-                          ),
-                        ),
                       ),
                     ),
                   ),

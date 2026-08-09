@@ -1,4 +1,4 @@
-package com.example.player
+package com.jglhomer.player
 
 import android.content.BroadcastReceiver
 import android.content.Context

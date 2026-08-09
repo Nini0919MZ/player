@@ -6,6 +6,7 @@ import '../providers/audio_provider.dart';
 import '../theme/app_theme.dart';
 import '../utils/title_utils.dart';
 import '../widgets/song_list_tile.dart';
+import '../widgets/smart_artwork.dart';
 import 'album_detail_screen.dart';
 import 'artist_detail_screen.dart';
 import 'folder_detail_screen.dart';
@@ -403,12 +404,11 @@ class _LibraryResultTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
         child: artworkId == null
             ? _FallbackArtwork(icon: fallbackIcon)
-            : QueryArtworkWidget(
-                id: artworkId!,
+            : SmartArtwork(
+                albumId: artworkId!,
+                songPath: "",
                 type: artworkType,
-                artworkHeight: 52,
-                artworkWidth: 52,
-                nullArtworkWidget: _FallbackArtwork(icon: fallbackIcon),
+                size: 52,
               ),
       ),
       title: Text(

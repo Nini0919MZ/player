@@ -28,7 +28,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   final OnAudioQuery _audioQuery = OnAudioQuery();
   final MyAudioHandler _handler;
   late final AudioPlayer _player;
-  static const _mediaChannel = MethodChannel('com.example.player/media_utils');
+  static const _mediaChannel = MethodChannel('com.jglhomer.player/media_utils');
   static const String _cachedSongsKey = 'cached_library_songs_v1';
   static const String _cachedAlbumsKey = 'cached_library_albums_v1';
   static const String _fallbackArtworkAsset =
@@ -152,7 +152,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     });
     // Escuchar acciones del widget
     HomeWidget.widgetClicked.listen((uri) {});
-    const MethodChannel('com.example.player/widget_actions')
+    const MethodChannel('com.jglhomer.player/widget_actions')
         .setMethodCallHandler((call) async {
       if (call.method == 'widget_action') {
         switch (call.arguments as String) {
@@ -247,7 +247,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _listenToPlayer() {
-    _player.currentIndexStream.listen((index) {
+    _player.currentIndexStream.listen((index) async {
       if (index != null &&
           index != _currentIndex &&
           index < _currentPlaylist.length) {
@@ -255,6 +255,19 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         _currentSong = _currentPlaylist[_currentIndex];
         _savePlaybackState();
         notifyListeners();
+
+        // Cargar portada de forma diferida solo para la canción actual (evita OutOfMemoryError)
+        if (_currentSong != null) {
+          final artUri = await _systemArtworkUriForSong(_currentSong!);
+          final queueItems = _handler.queue.value;
+          if (_currentIndex >= 0 && _currentIndex < queueItems.length) {
+            final updatedItem = queueItems[_currentIndex].copyWith(artUri: artUri);
+            _handler.mediaItem.add(updatedItem);
+            final updatedQueue = List<MediaItem>.from(queueItems);
+            updatedQueue[_currentIndex] = updatedItem;
+            _handler.queue.add(updatedQueue);
+          }
+        }
       }
     });
 
@@ -386,7 +399,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (diff.toInsert.isNotEmpty || diff.toUpdate.isNotEmpty) {
       final upserts = [...diff.toInsert, ...diff.toUpdate];
-      await LibraryDatabase.instance.upsertSongs(
+      await LibraryDatabase.instance.upsertSongsBatched(
         upserts.map((s) => s.getMap).toList(),
       );
     }
@@ -492,7 +505,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     // We already have fresh _allSongs from _applyFreshLibrary
     // Persist to SQLite
-    await LibraryDatabase.instance.upsertSongs(
+    await LibraryDatabase.instance.upsertSongsBatched(
       _allSongs.map((s) => s.getMap).toList(),
     );
   }
@@ -573,11 +586,24 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     await _syncPlayerLoopMode();
     await _handler.replacePlaylist(
-      await _songsToMediaItems(_currentPlaylist),
+      await _songsToMediaItems(_currentPlaylist, fast: true),
       _currentIndex,
       position,
       shouldPlay: shouldPlay,
     );
+
+    // Cargar portada de forma diferida solo para la canción actual (evita OutOfMemoryError)
+    if (_currentSong != null) {
+      final artUri = await _systemArtworkUriForSong(_currentSong!);
+      final queueItems = _handler.queue.value;
+      if (_currentIndex >= 0 && _currentIndex < queueItems.length) {
+        final updatedItem = queueItems[_currentIndex].copyWith(artUri: artUri);
+        _handler.mediaItem.add(updatedItem);
+        final updatedQueue = List<MediaItem>.from(queueItems);
+        updatedQueue[_currentIndex] = updatedItem;
+        _handler.queue.add(updatedQueue);
+      }
+    }
   }
 
   void _scheduleLibraryRefresh() {
@@ -1566,6 +1592,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       // Android puede leer sin restricciones de Scoped Storage.
       // Los content://media/... URIs fallan en Android 10+ porque el proceso
       // de MediaSession no tiene el mismo contexto de ContentProvider.
+      
+      // Nivel 1: MediaStore (on_audio_query)
       final artwork = await _audioQuery.queryArtwork(
         song.id,
         ArtworkType.AUDIO,
@@ -1587,6 +1615,24 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       debugPrint('Error checking artwork for MediaSession: $e');
     }
 
+    // Nivel 2: MediaMetadataRetriever (MethodChannel nativo)
+    try {
+      final Uint8List? embedded = await const MethodChannel('com.jglhomer.player/media_utils')
+          .invokeMethod('extractEmbeddedArtwork', {'filePath': song.data});
+      
+      if (embedded != null && embedded.isNotEmpty) {
+        final fileUri = await ArtworkCacheService.saveArtworkToTempFile(
+          song.id,
+          embedded,
+        );
+        if (fileUri != null) {
+          _systemArtworkUriCache[song.id] = fileUri;
+          return fileUri;
+        }
+      }
+    } catch (_) {}
+
+    // Nivel 3: Fallback asset
     final fallbackUri = await _fallbackArtworkUri();
     _systemArtworkUriCache[song.id] = fallbackUri;
     return fallbackUri;

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
+import 'smart_artwork.dart';
 import '../providers/audio_provider.dart';
 
 class MiniPlayerPill extends StatefulWidget {
@@ -118,19 +119,12 @@ class _MiniPlayerPillState extends State<MiniPlayerPill> with SingleTickerProvid
                 child: SizedBox(
                   height: 52,
                   width: 52,
-                  child: QueryArtworkWidget(
-                    id: widget.song.id,
+                  child: SmartArtwork(
+                    albumId: widget.song.id,
+                    songPath: widget.song.data,
                     type: ArtworkType.AUDIO,
-                    artworkWidth: double.infinity,
-                    artworkHeight: double.infinity,
-                    size: 200,
-                    quality: 100,
-                    nullArtworkWidget: Container(
-                      color: const Color(0xFF222222),
-                      child: const Center(
-                        child: Icon(Icons.graphic_eq_rounded, color: Colors.white12, size: 24),
-                      ),
-                    ),
+                    size: 52,
+                    borderRadius: BorderRadius.circular(26),
                   ),
                 ),
               ),

@@ -77,8 +77,8 @@ class StorageScanner {
     }
   }
 
-  static Future<bool> isValidAudioFile(
-      String filePath, int sizeBytes, String extension) async {
+  static bool isValidAudioFile(
+      String filePath, int sizeBytes, String extension) {
     // Check minimum size: 10KB
     if (sizeBytes < 10240) return false;
 
@@ -87,13 +87,11 @@ class StorageScanner {
       return false;
     }
 
-    try {
-      final file = File(filePath);
-      return await file.exists();
-    } catch (_) {
-      return false;
-    }
+    // MediaStore ya verifica la existencia; hacer 8000 IO checks congela la UI
+    return true;
   }
+
+  static int _lastProgressReportTime = 0;
 
   /// Filters songs asynchronously ensuring no UI blocking
   static Future<List<SongModel>> filterSongs(
@@ -105,58 +103,47 @@ class StorageScanner {
     Set<String> validDirs = {};
     Set<String> invalidDirs = {};
     final total = rawSongs.length;
+    _lastProgressReportTime = DateTime.now().millisecondsSinceEpoch;
 
     for (var i = 0; i < rawSongs.length; i++) {
       final song = rawSongs[i];
-      final path = song.data;
-      final dir = path.substring(0, path.lastIndexOf('/'));
       final processed = i + 1;
 
-      if (invalidDirs.contains(dir)) {
-        _reportProgress(
-          onProgress,
-          processed,
-          total,
-          validSongs.length,
-          song.title,
-        );
-        continue;
-      }
+      try {
+        final path = song.data;
+        if (path == null || path.isEmpty) continue;
+        
+        final dir = path.substring(0, path.lastIndexOf('/'));
 
-      if (!validDirs.contains(dir)) {
-        if (isSystemFolder(dir) ||
-            isBlockedFolder(dir) ||
-            await hasNoMedia(dir)) {
-          invalidDirs.add(dir);
-          _reportProgress(
-            onProgress,
-            processed,
-            total,
-            validSongs.length,
-            song.title,
-          );
+        if (invalidDirs.contains(dir)) {
+          _reportProgress(onProgress, processed, total, validSongs.length, song.title);
           continue;
         }
-        validDirs.add(dir);
+
+        if (!validDirs.contains(dir)) {
+          if (isSystemFolder(dir) || isBlockedFolder(dir) || await hasNoMedia(dir)) {
+            invalidDirs.add(dir);
+            _reportProgress(onProgress, processed, total, validSongs.length, song.title);
+            continue;
+          }
+          validDirs.add(dir);
+        }
+
+        final ext = song.fileExtension;
+        final isKnown = knownPaths?.contains(path) ?? false;
+        if (isKnown || isValidAudioFile(path, song.size, ext)) {
+          validSongs.add(song);
+        }
+      } catch (e) {
+        // Ignorar archivo corrupto
       }
 
-      final ext = song.fileExtension;
-      final isKnown = knownPaths?.contains(path) ?? false;
-      if (isKnown || await isValidAudioFile(path, song.size, ext)) {
-        validSongs.add(song);
-      }
-
-      if (processed % _progressBatchSize == 0) {
+      // Yield más frecuente para evitar jank (cada 24)
+      if (processed % 24 == 0) {
         await Future<void>.delayed(Duration.zero);
       }
 
-      _reportProgress(
-        onProgress,
-        processed,
-        total,
-        validSongs.length,
-        song.title,
-      );
+      _reportProgress(onProgress, processed, total, validSongs.length, song.title);
     }
 
     return validSongs;
@@ -170,15 +157,30 @@ class StorageScanner {
     String? currentTitle,
   ) {
     if (onProgress == null) return;
-    if (processed == total || processed % _progressBatchSize == 0) {
-      onProgress(
-        StorageScanProgress(
+    
+    // Siempre reportar si es el último
+    if (processed == total) {
+      onProgress(StorageScanProgress(
+        processed: processed,
+        total: total,
+        validSongs: validSongs,
+        currentTitle: currentTitle,
+      ));
+      return;
+    }
+
+    // Throttle de progreso basado en tiempo (100ms) para no ahogar la UI
+    if (processed % 24 == 0) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - _lastProgressReportTime >= 100) {
+        _lastProgressReportTime = now;
+        onProgress(StorageScanProgress(
           processed: processed,
           total: total,
           validSongs: validSongs,
           currentTitle: currentTitle,
-        ),
-      );
+        ));
+      }
     }
   }
 

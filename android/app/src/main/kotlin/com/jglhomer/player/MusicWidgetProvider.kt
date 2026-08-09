@@ -1,4 +1,4 @@
-package com.example.player
+package com.jglhomer.player
 
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
@@ -14,9 +14,9 @@ import android.widget.RemoteViews
 class MusicWidgetProvider : AppWidgetProvider() {
 
     companion object {
-        const val ACTION_PREVIOUS = "com.example.player.WIDGET_PREVIOUS"
-        const val ACTION_PLAY_PAUSE = "com.example.player.WIDGET_PLAY_PAUSE"
-        const val ACTION_NEXT = "com.example.player.WIDGET_NEXT"
+        const val ACTION_PREVIOUS = "com.jglhomer.player.WIDGET_PREVIOUS"
+        const val ACTION_PLAY_PAUSE = "com.jglhomer.player.WIDGET_PLAY_PAUSE"
+        const val ACTION_NEXT = "com.jglhomer.player.WIDGET_NEXT"
         const val PREFS_NAME = "HomeWidgetPreferences"
 
         fun updateWidget(context: Context) {

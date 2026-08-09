@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 import '../providers/audio_provider.dart';
+import 'smart_artwork.dart';
 
 class WideCard extends StatefulWidget {
   final SongModel song;
@@ -144,21 +145,11 @@ class _WideCardState extends State<WideCard>
               const SizedBox(width: 8),
               AspectRatio(
                 aspectRatio: 1,
-                child: QueryArtworkWidget(
-                  id: widget.song.id,
+                child: SmartArtwork(
+                  albumId: widget.song.id,
+                  songPath: widget.song.data,
                   type: ArtworkType.AUDIO,
-                  artworkWidth: double.infinity,
-                  artworkHeight: double.infinity,
-                  artworkFit: BoxFit.contain,
                   size: 400,
-                  quality: 100,
-                  nullArtworkWidget: Container(
-                    color: const Color(0xFF222222),
-                    child: const Center(
-                      child: Icon(Icons.music_note,
-                          color: Colors.white12, size: 40),
-                    ),
-                  ),
                 ),
               ),
             ],

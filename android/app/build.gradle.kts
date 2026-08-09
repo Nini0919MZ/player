@@ -15,7 +15,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.example.player"
+    namespace = "com.jglhomer.player"
     compileSdk = 36
 
     // Fix Bug #2 (paso 1): Fijar versión NDK explícita para que audiotags
@@ -42,7 +42,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.player"
+        applicationId = "com.jglhomer.player"
         minSdk = flutter.minSdkVersion
         targetSdk = 36
         versionCode = flutter.versionCode

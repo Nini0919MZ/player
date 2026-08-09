@@ -13,7 +13,7 @@ import 'package:flutter/services.dart';
 /// mediante SAF (ACTION_OPEN_DOCUMENT_TREE) y luego operar con Document URIs.
 class SdCardAccessService {
   static const MethodChannel _channel =
-      MethodChannel('com.example.player/saf_utils');
+      MethodChannel('com.jglhomer.player/saf_utils');
 
   /// Solicita al usuario que seleccione la carpeta raíz de la SD Card
   /// mediante el picker de SAF (ACTION_OPEN_DOCUMENT_TREE).

@@ -1,4 +1,4 @@
-package com.example.player
+package com.jglhomer.player
 
 import android.app.Activity
 import android.content.ContentUris
@@ -11,6 +11,7 @@ import android.os.Looper
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
+import android.media.MediaMetadataRetriever
 import android.view.WindowManager
 import androidx.documentfile.provider.DocumentFile
 import io.flutter.embedding.engine.FlutterEngine
@@ -23,9 +24,9 @@ import android.media.audiofx.Virtualizer
 
 class MainActivity : AudioServiceActivity() {
     private val TAG = "MainActivity"
-    private val CHANNEL = "com.example.player/media_utils"
-    private val WIDGET_CHANNEL = "com.example.player/widget_actions"
-    private val SAF_CHANNEL = "com.example.player/saf_utils"
+    private val CHANNEL = "com.jglhomer.player/media_utils"
+    private val WIDGET_CHANNEL = "com.jglhomer.player/widget_actions"
+    private val SAF_CHANNEL = "com.jglhomer.player/saf_utils"
     private var pendingResult: MethodChannel.Result? = null
     private val DELETE_REQUEST_CODE = 1001
     private val SAF_REQUEST_CODE = 1002
@@ -76,6 +77,23 @@ class MainActivity : AudioServiceActivity() {
                         result.success(metadata)
                     } else {
                         result.error("INVALID_ARGUMENT", "Path is required", null)
+                    }
+                }
+                "extractEmbeddedArtwork" -> {
+                    val filePath = call.argument<String>("filePath")
+                    if (filePath != null) {
+                        val retriever = MediaMetadataRetriever()
+                        try {
+                            retriever.setDataSource(filePath)
+                            val bytes = retriever.embeddedPicture
+                            result.success(bytes)
+                        } catch (e: Exception) {
+                            result.success(null)
+                        } finally {
+                            retriever.release()
+                        }
+                    } else {
+                        result.error("INVALID_ARGUMENT", "filePath is required", null)
                     }
                 }
                 "init_reverb" -> {

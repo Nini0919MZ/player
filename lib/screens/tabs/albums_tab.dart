@@ -6,6 +6,7 @@ import '../../../providers/audio_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/title_utils.dart';
 import '../../../widgets/count_banner.dart';
+import '../../../widgets/smart_artwork.dart';
 import '../album_detail_screen.dart';
 
 class AlbumsTab extends StatelessWidget {
@@ -60,17 +61,11 @@ class AlbumsTab extends StatelessWidget {
                     color: Colors.grey[800],
                     child: const Icon(Icons.album, color: Colors.grey),
                   )
-                : QueryArtworkWidget(
-                    id: album.artworkId!,
+                : SmartArtwork(
+                    albumId: album.artworkId!,
+                    songPath: album.songs.first.data,
                     type: ArtworkType.ALBUM,
-                    artworkHeight: 50,
-                    artworkWidth: 50,
-                    nullArtworkWidget: Container(
-                      height: 50,
-                      width: 50,
-                      color: Colors.grey[800],
-                      child: const Icon(Icons.album, color: Colors.grey),
-                    ),
+                    size: 50,
                   ),
           ),
           title: Text(

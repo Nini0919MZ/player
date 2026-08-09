@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 import '../utils/title_utils.dart';
+import 'smart_artwork.dart';
 import '../providers/audio_provider.dart';
 
 class QueueBottomSheet extends StatefulWidget {
@@ -93,19 +94,11 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                   leading: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: QueryArtworkWidget(
-                      id: song.id,
+                    child: SmartArtwork(
+                      albumId: song.id,
+                      songPath: song.data,
                       type: ArtworkType.AUDIO,
-                      size: 200,
-                      artworkHeight: 50,
-                      artworkWidth: 50,
-                      nullArtworkWidget: Container(
-                        height: 50,
-                        width: 50,
-                        color: Colors.grey[900],
-                        child:
-                            const Icon(Icons.music_note, color: Colors.white24),
-                      ),
+                      size: 50,
                     ),
                   ),
                   title: Text(

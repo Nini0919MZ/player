@@ -8,6 +8,8 @@ import '../providers/audio_provider.dart';
 import '../theme/app_theme.dart';
 import '../utils/title_utils.dart';
 import '../widgets/marquee_text.dart';
+import '../widgets/smart_artwork.dart';
+import '../widgets/mini_player.dart';
 import 'car_mode_library_screen.dart';
 
 class CarModeScreen extends StatefulWidget {
@@ -18,7 +20,7 @@ class CarModeScreen extends StatefulWidget {
 }
 
 class _CarModeScreenState extends State<CarModeScreen> {
-  static const _mediaChannel = MethodChannel('com.example.player/media_utils');
+  static const _mediaChannel = MethodChannel('com.jglhomer.player/media_utils');
 
   @override
   void initState() {
@@ -361,23 +363,11 @@ class _ArtworkPanel extends StatelessWidget {
           aspectRatio: 1,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: QueryArtworkWidget(
-              id: song.id,
+            child: SmartArtwork(
+              albumId: song.id,
+              songPath: song.data,
               type: ArtworkType.AUDIO,
-              artworkFit: BoxFit.contain,
-              artworkHeight: double.infinity,
-              artworkWidth: double.infinity,
-              size: 1000,
-              nullArtworkWidget: Container(
-                color: const Color(0xFF18181C),
-                child: const Center(
-                  child: Icon(
-                    Icons.music_note_rounded,
-                    color: Colors.white24,
-                    size: 150,
-                  ),
-                ),
-              ),
+              size: 400,
             ),
           ),
         ),

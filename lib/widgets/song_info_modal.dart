@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'smart_artwork.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:audiotags/audiotags.dart';
 import 'package:path/path.dart' as path;
@@ -20,7 +21,7 @@ class SongInfoModal extends StatefulWidget {
 
 class _SongInfoModalState extends State<SongInfoModal> {
   static const MethodChannel _mediaChannel =
-      MethodChannel('com.example.player/media_utils');
+      MethodChannel('com.jglhomer.player/media_utils');
 
   late final Future<_DetailedMetadata> _detailsFuture;
 
@@ -312,22 +313,11 @@ class _SongInfoModalState extends State<SongInfoModal> {
   }
 
   Widget _buildFallbackArtwork(SongModel song, double size) {
-    return QueryArtworkWidget(
-      id: song.id,
+    return SmartArtwork(
+      albumId: song.id,
+      songPath: song.data,
       type: ArtworkType.AUDIO,
-      artworkHeight: size,
-      artworkWidth: size,
-      size: 500,
-      nullArtworkWidget: Container(
-        height: size,
-        width: size,
-        color: Colors.grey[900],
-        child: Icon(
-          Icons.music_note_rounded,
-          color: Colors.white24,
-          size: size * 0.4,
-        ),
-      ),
+      size: 1000,
     );
   }
 

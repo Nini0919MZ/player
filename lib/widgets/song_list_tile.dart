@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'song_info_modal.dart';
 import '../providers/audio_provider.dart';
 
+import 'smart_artwork.dart';
 import '../theme/app_theme.dart';
 
 class SongListTile extends StatelessWidget {
@@ -41,17 +42,12 @@ class SongListTile extends StatelessWidget {
       contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
       leading: ClipRRect(
         borderRadius: BorderRadius.circular(5.0),
-        child: QueryArtworkWidget(
-          id: song.id,
+        child: SmartArtwork(
+          albumId: song.id,
+          songPath: song.data,
           type: ArtworkType.AUDIO,
-          artworkHeight: 56,
-          artworkWidth: 56,
-          nullArtworkWidget: Container(
-            height: 56,
-            width: 56,
-            color: const Color(0xFF1E1E1E),
-            child: const Icon(Icons.music_note, color: Colors.grey),
-          ),
+          size: 56,
+          borderRadius: BorderRadius.circular(5.0),
         ),
       ),
       title: Text(

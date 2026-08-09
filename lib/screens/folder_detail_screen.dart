@@ -8,6 +8,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/folder_info_modal.dart';
 import '../../widgets/mini_player.dart';
 import '../../widgets/song_list_tile.dart';
+import '../../widgets/smart_artwork.dart';
 import 'search_screen.dart';
 
 class FolderDetailScreen extends StatelessWidget {
@@ -117,17 +118,12 @@ class FolderDetailScreen extends StatelessWidget {
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(8.0),
-                            child: QueryArtworkWidget(
-                              id: firstSongWithArt.albumId ?? 0,
-                              type: ArtworkType.ALBUM,
-                              artworkHeight: 120,
-                              artworkWidth: 120,
-                              nullArtworkWidget: Container(
-                                height: 120,
-                                width: 120,
-                                color: Colors.grey[800],
-                                child: const Icon(Icons.folder, color: Colors.grey, size: 60),
-                              ),
+                            child: SmartArtwork(
+                              albumId: firstSongWithArt.albumId ?? 0,
+                              songPath: firstSongWithArt.data,
+                              type: ArtworkType.AUDIO,
+                              size: 120,
+                              borderRadius: BorderRadius.circular(8),
                             ),
                           ),
                           const SizedBox(width: 16),

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 import '../providers/audio_provider.dart';
+import 'smart_artwork.dart';
+import '../theme/app_theme.dart';
 import '../utils/title_utils.dart';
 
 class AlbumCard extends StatefulWidget {
@@ -82,24 +84,12 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
                 aspectRatio: 1,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(16),
-                  child: QueryArtworkWidget(
-                    id: widget.song.id,
+                  child: SmartArtwork(
+                    albumId: widget.song.id,
+                    songPath: widget.song.data,
                     type: ArtworkType.AUDIO,
-                    artworkWidth: double.infinity,
-                    artworkHeight: double.infinity,
-                    size: 400,
-                    quality: 100,
-                    nullArtworkWidget: Container(
-                      color: const Color(0xFF222222),
-                      child: Image.asset(
-                        'assets/icon/music_note_fallback.png',
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        height: double.infinity,
-                        color: Colors.white24,
-                        colorBlendMode: BlendMode.modulate,
-                      ),
-                    ),
+                    size: 400, // Size for the card
+                    borderRadius: BorderRadius.circular(16),
                   ),
                 ),
               ),
