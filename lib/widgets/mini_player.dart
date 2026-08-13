@@ -370,7 +370,8 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
               if (_epicentro)
                 PopupMenuItem(
                   enabled: false,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: StatefulBuilder(
                     builder: (context, setItemState) {
                       return Column(
@@ -379,7 +380,8 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                         children: [
                           const Text(
                             'Intensidad',
-                            style: TextStyle(color: Colors.white70, fontSize: 12),
+                            style:
+                                TextStyle(color: Colors.white70, fontSize: 12),
                           ),
                           Row(
                             children: [
@@ -387,8 +389,10 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                                 child: SliderTheme(
                                   data: SliderTheme.of(context).copyWith(
                                     trackHeight: 2.0,
-                                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
-                                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 14.0),
+                                    thumbShape: const RoundSliderThumbShape(
+                                        enabledThumbRadius: 6.0),
+                                    overlayShape: const RoundSliderOverlayShape(
+                                        overlayRadius: 14.0),
                                   ),
                                   child: Slider(
                                     value: audioProvider.epicenterIntensity,
@@ -397,7 +401,8 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                                     activeColor: Colors.greenAccent,
                                     inactiveColor: Colors.white24,
                                     onChanged: (v) {
-                                      audioProvider.updateEpicenterSettings(intensity: v);
+                                      audioProvider.updateEpicenterSettings(
+                                          intensity: v);
                                       setItemState(() {});
                                     },
                                   ),
@@ -405,7 +410,8 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                               ),
                               Text(
                                 '${audioProvider.epicenterIntensity.toInt()}%',
-                                style: const TextStyle(color: Colors.white70, fontSize: 11),
+                                style: const TextStyle(
+                                    color: Colors.white70, fontSize: 11),
                               ),
                             ],
                           ),
@@ -459,11 +465,24 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                         audioProvider.player
                             .seek(currentPos + const Duration(seconds: 10));
                       },
-                      child: SmartArtwork(
-                        albumId: song.id,
-                        songPath: song.data,
-                        type: ArtworkType.AUDIO,
-                        size: 1000,
+                      child: Center(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final artworkSize =
+                                constraints.biggest.shortestSide;
+                            return SizedBox.square(
+                              dimension: artworkSize,
+                              child: SmartArtwork(
+                                albumId: song.id,
+                                songPath: song.data,
+                                type: ArtworkType.AUDIO,
+                                size: artworkSize,
+                                borderRadius: BorderRadius.circular(
+                                    12), // Bordes redondeados sutiles para mejorar la estética
+                              ),
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ),

@@ -261,7 +261,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
           final artUri = await _systemArtworkUriForSong(_currentSong!);
           final queueItems = _handler.queue.value;
           if (_currentIndex >= 0 && _currentIndex < queueItems.length) {
-            final updatedItem = queueItems[_currentIndex].copyWith(artUri: artUri);
+            final currentItem = queueItems[_currentIndex];
+            if (currentItem.id != _currentSong!.data) return;
+            final updatedItem = currentItem.copyWith(artUri: artUri);
             _handler.mediaItem.add(updatedItem);
             final updatedQueue = List<MediaItem>.from(queueItems);
             updatedQueue[_currentIndex] = updatedItem;
@@ -360,6 +362,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         result = await _applyIncrementalSync(freshSongs);
       }
     } finally {
+      final shouldNotifyDone =
+          showLoading || _isSyncing || _isIndexing || result?.hasChanges == true;
       _isRefreshingLibrary = false;
       _isIndexing = false;
       _isSyncing = false;
@@ -592,17 +596,36 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       shouldPlay: shouldPlay,
     );
 
-    // Cargar portada de forma diferida solo para la canción actual (evita OutOfMemoryError)
+    // Cargar la carátula de la canción actual en segundo plano sin bloquear la reproducción.
     if (_currentSong != null) {
-      final artUri = await _systemArtworkUriForSong(_currentSong!);
+      unawaited(_updateCurrentSongArtwork(_currentSong!));
+    }
+  }
+
+  /// Actualiza la carátula de la canción actual en el MediaItem del handler
+  /// (notificación + pantalla de bloqueo) de forma no bloqueante.
+  /// Siempre extrae la imagen a máxima calidad via método nativo primero.
+  Future<void> _updateCurrentSongArtwork(SongModel song) async {
+    try {
+      final artUri = await _systemArtworkUriForSong(song);
+      // Verificar que la canción actual no cambió mientras esperábamos
+      if (_currentSong?.id != song.id) return;
       final queueItems = _handler.queue.value;
       if (_currentIndex >= 0 && _currentIndex < queueItems.length) {
-        final updatedItem = queueItems[_currentIndex].copyWith(artUri: artUri);
+        final currentItem = queueItems[_currentIndex];
+        if (currentItem.id != song.data) return;
+        // Solo actualizar si la uri real es diferente al fallback/placeholder
+        final fallbackUri = _fallbackArtworkFileUri;
+        if (fallbackUri != null && artUri.path == fallbackUri.path) return;
+        final updatedItem = currentItem.copyWith(artUri: artUri);
         _handler.mediaItem.add(updatedItem);
         final updatedQueue = List<MediaItem>.from(queueItems);
         updatedQueue[_currentIndex] = updatedItem;
         _handler.queue.add(updatedQueue);
       }
+    } catch (e) {
+      debugPrint(
+          '[AudioProvider] Error actualizando artwork en MediaSession: $e');
     }
   }
 
@@ -1080,10 +1103,12 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _loadCurrentPlaylistFromScratch() async {
-    // Use a fast path for large playlists to avoid querying artwork per-item
-    // Lower threshold for faster responsiveness on slower devices
+    // Ruta rápida para listas grandes: no bloquear el inicio de reproducción
+    // esperando la carátula de cada pista. Usamos el fallback placeholder para
+    // arrancar el player de inmediato y luego actualizamos la canción actual.
     final useFast = _currentPlaylist.length > 20;
-    final mediaItems = await _songsToMediaItems(_currentPlaylist, fast: useFast);
+    final mediaItems =
+        await _songsToMediaItems(_currentPlaylist, fast: useFast);
 
     try {
       await _syncPlayerLoopMode();
@@ -1097,6 +1122,13 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         await next();
       }
     }
+
+    // Cargar la carátula real de la canción actual en segundo plano,
+    // SIN bloquear el inicio de la reproducción. Esto es la corrección
+    // principal para que aparezca la imagen en la pantalla de bloqueo.
+    if (useFast && _currentSong != null) {
+      unawaited(_updateCurrentSongArtwork(_currentSong!));
+    }
   }
 
   Future<void> _jumpWithinCurrentPlaylist() async {
@@ -1105,6 +1137,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       await _handler.playDirect();
       await _savePlaybackState();
       await _updateHomeWidget();
+      // Actualizar artwork de la pantalla de bloqueo para esta pista
+      if (_currentSong != null) {
+        unawaited(_updateCurrentSongArtwork(_currentSong!));
+      }
     } catch (e) {
       debugPrint("Error jumping in playlist: $e");
       await _loadCurrentPlaylistFromScratch();
@@ -1481,12 +1517,12 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         .indexWhere((s) => s.data == path || s.id == targetSong.id);
     if (pIdx != -1) _currentPlaylist[pIdx] = updatedSong;
 
-    final gIdx = _globalQueue
-        .indexWhere((s) => s.data == path || s.id == targetSong.id);
+    final gIdx =
+        _globalQueue.indexWhere((s) => s.data == path || s.id == targetSong.id);
     if (gIdx != -1) _globalQueue[gIdx] = updatedSong;
 
-    final fIdx = _folderQueue
-        .indexWhere((s) => s.data == path || s.id == targetSong.id);
+    final fIdx =
+        _folderQueue.indexWhere((s) => s.data == path || s.id == targetSong.id);
     if (fIdx != -1) _folderQueue[fIdx] = updatedSong;
 
     if (_currentSong?.id == targetSong.id || _currentSong?.data == path) {
@@ -1562,9 +1598,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<MediaItem> _songToMediaItem(SongModel s, {bool fast = false}) async {
     String title = TitleUtils.getDisplayTitle(s);
 
-    final Uri artUri = fast
-        ? await _fallbackArtworkUri()
-        : await _systemArtworkUriForSong(s);
+    final Uri artUri =
+        fast ? await _fallbackArtworkUri() : await _systemArtworkUriForSong(s);
 
     return MediaItem(
       id: s.data,
@@ -1578,7 +1613,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
-  Future<List<MediaItem>> _songsToMediaItems(List<SongModel> songs, {bool fast = false}) {
+  Future<List<MediaItem>> _songsToMediaItems(List<SongModel> songs,
+      {bool fast = false}) {
     return Future.wait(songs.map((s) => _songToMediaItem(s, fast: fast)));
   }
 
@@ -1586,14 +1622,34 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     final cached = _systemArtworkUriCache[song.id];
     if (cached != null) return cached;
 
+    // Solución Bug #1: Guardamos los bytes de la carátula en un archivo
+    // temporal con esquema file://, que el sistema de notificaciones de
+    // Android puede leer sin restricciones de Scoped Storage.
+    // Los content://media/... URIs fallan en Android 10+ porque el proceso
+    // de MediaSession no tiene el mismo contexto de ContentProvider.
+
     try {
-      // Solución Bug #1: Guardamos los bytes de la carátula en un archivo
-      // temporal con esquema file://, que el sistema de notificaciones de
-      // Android puede leer sin restricciones de Scoped Storage.
-      // Los content://media/... URIs fallan en Android 10+ porque el proceso
-      // de MediaSession no tiene el mismo contexto de ContentProvider.
-      
-      // Nivel 1: MediaStore (on_audio_query)
+      // Nivel 1: MediaMetadataRetriever (MethodChannel nativo) para máxima calidad
+      // Esto previene que en la pantalla de bloqueo y notificaciones se vea
+      // la miniatura borrosa de MediaStore.
+      final Uint8List? embedded =
+          await const MethodChannel('com.jglhomer.player/media_utils')
+              .invokeMethod('extractEmbeddedArtwork', {'filePath': song.data});
+
+      if (embedded != null && embedded.isNotEmpty) {
+        final fileUri = await ArtworkCacheService.saveArtworkToTempFile(
+          song.id,
+          embedded,
+        );
+        if (fileUri != null) {
+          _systemArtworkUriCache[song.id] = fileUri;
+          return fileUri;
+        }
+      }
+    } catch (_) {}
+
+    try {
+      // Nivel 2: MediaStore (on_audio_query)
       final artwork = await _audioQuery.queryArtwork(
         song.id,
         ArtworkType.AUDIO,
@@ -1614,23 +1670,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('Error checking artwork for MediaSession: $e');
     }
-
-    // Nivel 2: MediaMetadataRetriever (MethodChannel nativo)
-    try {
-      final Uint8List? embedded = await const MethodChannel('com.jglhomer.player/media_utils')
-          .invokeMethod('extractEmbeddedArtwork', {'filePath': song.data});
-      
-      if (embedded != null && embedded.isNotEmpty) {
-        final fileUri = await ArtworkCacheService.saveArtworkToTempFile(
-          song.id,
-          embedded,
-        );
-        if (fileUri != null) {
-          _systemArtworkUriCache[song.id] = fileUri;
-          return fileUri;
-        }
-      }
-    } catch (_) {}
 
     // Nivel 3: Fallback asset
     final fallbackUri = await _fallbackArtworkUri();
@@ -1717,9 +1756,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         _currentSong = _currentPlaylist[_currentIndex];
 
         await _syncPlayerLoopMode();
-        final mediaItems = await _songsToMediaItems(_currentPlaylist);
+        final mediaItems =
+            await _songsToMediaItems(_currentPlaylist, fast: true);
         await _handler.loadPlaylist(
             mediaItems, _currentIndex, Duration(milliseconds: positionMs));
+        unawaited(_updateCurrentSongArtwork(_currentSong!));
         notifyListeners();
       }
     }

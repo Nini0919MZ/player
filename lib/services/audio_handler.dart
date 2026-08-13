@@ -53,6 +53,14 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         _triggerNextTrackSafe();
       }
     });
+
+    // 5. Error listener: saltar automáticamente canciones no reproducibles
+    // Esto previene el bug de "audio simulado" al cambiar carpetas cuando
+    // un archivo tiene ruta inválida o está dañado.
+    _player.playbackEventStream.listen((_) {}, onError: (Object e, StackTrace st) {
+      debugPrint('[AudioHandler] Error de reproducción, saltando pista: $e');
+      _triggerNextTrackSafe();
+    });
   }
 
   void _triggerNextTrackSafe() {

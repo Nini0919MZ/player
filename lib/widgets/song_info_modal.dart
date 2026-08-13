@@ -119,7 +119,10 @@ class _SongInfoModalState extends State<SongInfoModal> {
     if (ext == 'FLAC' || mime.contains('flac')) {
       return "Free Lossless Audio Codec (FLAC)";
     }
-    if (ext == 'M4A' || ext == 'AAC' || mime.contains('aac') || mime.contains('mp4')) {
+    if (ext == 'M4A' ||
+        ext == 'AAC' ||
+        mime.contains('aac') ||
+        mime.contains('mp4')) {
       return "Advanced Audio Coding (AAC/M4A)";
     }
     if (ext.isNotEmpty) {
@@ -153,7 +156,8 @@ class _SongInfoModalState extends State<SongInfoModal> {
     final fileName = path.basename(song.data);
 
     return Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+      constraints:
+          BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
       decoration: const BoxDecoration(
         color: Color(0xFF1E1E1E),
         borderRadius: BorderRadius.only(
@@ -194,20 +198,32 @@ class _SongInfoModalState extends State<SongInfoModal> {
                   final id3 = details?.id3Tag;
                   final stat = details?.fileStat;
 
-                  final displayTitle = id3?.title ?? TitleUtils.getDisplayTitle(song);
-                  final displayAlbum = id3?.album ?? TitleUtils.getDisplayAlbum(song);
-                  final displayArtist = id3?.artist ?? TitleUtils.getDisplayArtist(song.artist);
-                  final displayAlbumArtist = rData['albumArtist'] ?? "Desconocido";
+                  final displayTitle =
+                      id3?.title ?? TitleUtils.getDisplayTitle(song);
+                  final displayAlbum =
+                      id3?.album ?? TitleUtils.getDisplayAlbum(song);
+                  final displayArtist =
+                      id3?.artist ?? TitleUtils.getDisplayArtist(song.artist);
+                  final displayAlbumArtist =
+                      rData['albumArtist'] ?? "Desconocido";
                   final displayComposer = rData['composer'] ?? "Desconocido";
-                  final displayYear = id3?.year?.toString() ?? rData['year'] ?? "Desconocido";
-                  final displayGenre = id3?.genre ?? song.genre ?? rData['genre'] ?? "Desconocido";
-                  final displayTrack = song.track?.toString() ?? rData['track'] ?? "Desconocido";
+                  final displayYear =
+                      id3?.year?.toString() ?? rData['year'] ?? "Desconocido";
+                  final displayGenre = id3?.genre ??
+                      song.genre ??
+                      rData['genre'] ??
+                      "Desconocido";
+                  final displayTrack =
+                      song.track?.toString() ?? rData['track'] ?? "Desconocido";
 
-                  final dateAdded = _formatDate(song.dateAdded ?? stat?.accessed);
-                  final dateModified = _formatDate(stat?.modified ?? song.dateModified);
+                  final dateAdded =
+                      _formatDate(song.dateAdded ?? stat?.accessed);
+                  final dateModified =
+                      _formatDate(stat?.modified ?? song.dateModified);
 
                   return ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                     children: [
                       // Header compacto
                       Row(
@@ -221,7 +237,8 @@ class _SongInfoModalState extends State<SongInfoModal> {
                                     height: 80,
                                     width: 80,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => _buildFallbackArtwork(song, 80),
+                                    errorBuilder: (_, __, ___) =>
+                                        _buildFallbackArtwork(song, 80),
                                   )
                                 : _buildFallbackArtwork(song, 80),
                           ),
@@ -267,7 +284,7 @@ class _SongInfoModalState extends State<SongInfoModal> {
                       _infoRowHorizontal("Year", displayYear),
                       _infoRowHorizontal("Genre", displayGenre),
                       _infoRowHorizontal("Track number", displayTrack),
-                      
+
                       const SizedBox(height: 16),
                       const Divider(color: Colors.white10, height: 1),
                       const SizedBox(height: 16),
@@ -276,13 +293,22 @@ class _SongInfoModalState extends State<SongInfoModal> {
                       _sectionHeader("Detalles del Archivo"),
                       _infoRowVertical("File name", fileName),
                       _infoRowVertical("File path", song.data),
-                      _infoRowHorizontal("Format", _formatFormat(rData, song.data)),
-                      _infoRowHorizontal("Size", _formatSize(song.size > 0 ? song.size : (stat?.size ?? 0))),
-                      _infoRowHorizontal("Length", _formatDuration(song.duration)),
-                      _infoRowHorizontal("Bitrate", _formatBitrate(rData['bitrate'])),
-                      _infoRowHorizontal("Sampling rate", _formatSampleRate(rData['sampleRate'])),
-                      _infoRowHorizontal("Channels", _formatChannels(rData['channels'])),
-                      _infoRowHorizontal("Bits per sample", _formatBitsPerSample(rData['bitsPerSample'])),
+                      _infoRowHorizontal(
+                          "Format", _formatFormat(rData, song.data)),
+                      _infoRowHorizontal(
+                          "Size",
+                          _formatSize(
+                              song.size > 0 ? song.size : (stat?.size ?? 0))),
+                      _infoRowHorizontal(
+                          "Length", _formatDuration(song.duration)),
+                      _infoRowHorizontal(
+                          "Bitrate", _formatBitrate(rData['bitrate'])),
+                      _infoRowHorizontal("Sampling rate",
+                          _formatSampleRate(rData['sampleRate'])),
+                      _infoRowHorizontal(
+                          "Channels", _formatChannels(rData['channels'])),
+                      _infoRowHorizontal("Bits per sample",
+                          _formatBitsPerSample(rData['bitsPerSample'])),
                       _infoRowHorizontal("Date added", dateAdded),
                       _infoRowHorizontal("Date modified", dateModified),
                       const SizedBox(height: 24),
@@ -313,16 +339,20 @@ class _SongInfoModalState extends State<SongInfoModal> {
   }
 
   Widget _buildFallbackArtwork(SongModel song, double size) {
-    return SmartArtwork(
-      albumId: song.id,
-      songPath: song.data,
-      type: ArtworkType.AUDIO,
-      size: 1000,
+    return SizedBox.square(
+      dimension: size,
+      child: SmartArtwork(
+        albumId: song.id,
+        songPath: song.data,
+        type: ArtworkType.AUDIO,
+        size: size,
+      ),
     );
   }
 
   Widget _infoRowHorizontal(String label, String value) {
-    final displayVal = (value.trim().isEmpty || value == "null") ? "Desconocido" : value;
+    final displayVal =
+        (value.trim().isEmpty || value == "null") ? "Desconocido" : value;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
@@ -338,7 +368,10 @@ class _SongInfoModalState extends State<SongInfoModal> {
             child: Text(
               displayVal,
               textAlign: TextAlign.right,
-              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
@@ -349,7 +382,8 @@ class _SongInfoModalState extends State<SongInfoModal> {
   }
 
   Widget _infoRowVertical(String label, String value) {
-    final displayVal = (value.trim().isEmpty || value == "null") ? "Desconocido" : value;
+    final displayVal =
+        (value.trim().isEmpty || value == "null") ? "Desconocido" : value;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6.0),
       child: Column(
@@ -362,7 +396,8 @@ class _SongInfoModalState extends State<SongInfoModal> {
           const SizedBox(height: 2),
           Text(
             displayVal,
-            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
+            style: const TextStyle(
+                color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
