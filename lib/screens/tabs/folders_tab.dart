@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../providers/audio_provider.dart';
+import '../../../services/state_persistence.dart';
 import '../../../widgets/folder_list_tile.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/count_banner.dart';
@@ -20,6 +21,50 @@ class _FoldersTabState extends State<FoldersTab> {
   final List<String> _alphabet = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
   String? _draggedLetter;
   final double _itemHeight = 82.0;
+  bool _restoredNavigation = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Restore the last browsed subfolder after the first frame so that
+    // the provider and Navigator are fully ready.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _restoreLastFolder());
+  }
+
+  Future<void> _restoreLastFolder() async {
+    if (_restoredNavigation) return;
+    _restoredNavigation = true;
+
+    final lastPath = await StatePersistence.loadLastBrowsedFolder();
+    if (lastPath == null || lastPath.isEmpty) return;
+    if (!mounted) return;
+
+    final audioProvider = context.read<AudioProvider>();
+    final allSongs = audioProvider.allSongs;
+
+    // Find songs in the saved folder
+    final folderSongs = allSongs.where((song) {
+      final songDir = path.dirname(song.data);
+      return songDir == lastPath;
+    }).toList();
+
+    if (folderSongs.isEmpty || !mounted) return;
+
+    final folderName = lastPath.split('/').last;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FolderDetailScreen(
+          folderName: folderName,
+          songs: folderSongs,
+          folderPath: lastPath,
+        ),
+      ),
+    ).then((_) {
+      // Clear the saved path when the user pops back to root.
+      StatePersistence.saveLastBrowsedFolder(null);
+    });
+  }
 
   @override
   void dispose() {
@@ -114,15 +159,21 @@ class _FoldersTabState extends State<FoldersTab> {
                   folderName: folderName,
                   songs: folderSongs,
                   onTap: () {
+                    // Persist the folder path so the app reopens here next time.
+                    StatePersistence.saveLastBrowsedFolder(folderPath);
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) => FolderDetailScreen(
                           folderName: folderName,
                           songs: folderSongs,
+                          folderPath: folderPath,
                         ),
                       ),
-                    );
+                    ).then((_) {
+                      // Clear the saved path when the user pops back to root.
+                      StatePersistence.saveLastBrowsedFolder(null);
+                    });
                   },
                 );
               },

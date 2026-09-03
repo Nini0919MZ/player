@@ -36,7 +36,6 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
     final queue = audioProvider.currentPlaylist;
-    final currentIndex = audioProvider.currentIndex;
 
     return Container(
       decoration: const BoxDecoration(
@@ -76,20 +75,19 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
           ),
           const SizedBox(height: 10),
           Expanded(
-            child: ReorderableListView.builder(
-              scrollController: _scrollController,
+            child: ListView.builder(
+              controller: _scrollController,
               itemExtent: _queueItemExtent,
               padding: const EdgeInsets.only(bottom: 20),
               itemCount: queue.length,
-              onReorder: (oldIndex, newIndex) {
-                audioProvider.reorderQueue(oldIndex, newIndex);
-              },
               itemBuilder: (context, index) {
                 final song = queue[index];
-                final isPlaying = index == currentIndex;
+                final currentSong = audioProvider.currentSong;
+                final isPlaying =
+                    currentSong != null && song.data == currentSong.data;
 
                 return ListTile(
-                  key: ValueKey(song.id),
+                  key: ValueKey('${song.id}_${song.data}'),
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                   leading: ClipRRect(
@@ -112,7 +110,7 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   subtitle: Text(
-                    song.artist ?? "Desconocido",
+                    TitleUtils.getDisplayArtist(song.artist),
                     style: TextStyle(
                         color: isPlaying
                             ? Colors.pink.withOpacity(0.7)
@@ -126,16 +124,18 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                       if (isPlaying)
                         const Icon(Icons.equalizer,
                             color: Color(0xFFE91E63), size: 20),
+                      // Botón de eliminación — solo quita de la cola activa,
+                      // nunca borra el archivo físico del almacenamiento.
                       IconButton(
-                        icon: const Icon(Icons.remove_circle_outline,
-                            color: Colors.white30),
+                        icon: const Icon(Icons.delete_outline,
+                            color: Colors.white38),
+                        tooltip: 'Quitar de la cola',
                         onPressed: () => audioProvider.removeFromQueue(index),
                       ),
-                      const Icon(Icons.drag_handle, color: Colors.white24),
                     ],
                   ),
                   onTap: () {
-                    audioProvider.playPlaylist(queue, index);
+                    audioProvider.skipToIndex(index);
                   },
                 );
               },

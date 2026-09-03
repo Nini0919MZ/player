@@ -12,7 +12,9 @@ class StatePersistence {
   static const String _modeKey = 'playback_mode';
   static const String _folderPathKey = 'active_folder_path';
   static const String _songPathKey = 'current_song_path';
+  static const String _trackIdKey = 'current_track_id';
   static const String _positionKey = 'position_ms';
+  static const String _playlistKey = 'playback_playlist_paths_v1';
   static const String _favoritesKey = 'favorites';
   static const String _autoModeKey = 'auto_mode_enabled';
   static const String _legacyAutoModeKey = 'modo_auto';
@@ -85,6 +87,8 @@ class StatePersistence {
     required PlaybackMode mode,
     String? folderPath,
     required String songPath,
+    int? trackId,
+    List<String>? playlistPaths,
     required int positionMs,
   }) async {
     final prefs = await SharedPreferences.getInstance();
@@ -97,6 +101,16 @@ class StatePersistence {
     }
 
     await prefs.setString(_songPathKey, songPath);
+    if (trackId != null) {
+      await prefs.setInt(_trackIdKey, trackId);
+    } else {
+      await prefs.remove(_trackIdKey);
+    }
+    if (playlistPaths != null) {
+      await prefs.setStringList(_playlistKey, playlistPaths);
+    } else {
+      await prefs.remove(_playlistKey);
+    }
     await prefs.setInt(_positionKey, positionMs);
   }
 
@@ -111,6 +125,8 @@ class StatePersistence {
       'mode': mode,
       'folderPath': prefs.getString(_folderPathKey),
       'songPath': prefs.getString(_songPathKey),
+      'trackId': prefs.getInt(_trackIdKey),
+      'playlistPaths': prefs.getStringList(_playlistKey) ?? <String>[],
       'positionMs': prefs.getInt(_positionKey) ?? 0,
     };
   }
@@ -149,7 +165,24 @@ class StatePersistence {
     await prefs.setStringList(_enabledTabsKey, tabs);
   }
 
+  // Navigation folder persistence: remembers the last subfolder the user
+  // was browsing so the app reopens directly inside it instead of the root.
+  static const String _lastBrowsedFolderKey = 'last_browsed_folder_path';
+
+  static Future<void> saveLastBrowsedFolder(String? path) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (path != null) {
+      await prefs.setString(_lastBrowsedFolderKey, path);
+    } else {
+      await prefs.remove(_lastBrowsedFolderKey);
+    }
+  }
+
+  static Future<String?> loadLastBrowsedFolder() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_lastBrowsedFolderKey);
+  }
+
   // Legacy: kept for migration if needed
   static const String _tabCountKey = 'main_tab_count';
 }
-

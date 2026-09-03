@@ -784,11 +784,16 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
     );
   }
 
-  String _formatDuration(Duration d) {
-    if (d == Duration.zero) return "0:00";
-    final minutes = d.inMinutes.remainder(60).toString();
-    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
+  String _formatDuration(Duration duration) {
+    if (duration == Duration.zero) return "0:00";
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+
+    if (hours > 0) {
+      return '$hours:$minutes:$seconds';
+    }
+    return '${duration.inMinutes}:$seconds';
   }
 
   String _resolveAlbumLabel(dynamic song) {

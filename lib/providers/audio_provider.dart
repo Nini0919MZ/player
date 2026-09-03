@@ -80,12 +80,17 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Set<int> _favoriteIds = {};
   DateTime? _lastTapTime;
   Timer? _libraryRefreshDebounce;
+  Timer? _saveDebounce;           // Bug #3: debounce para _savePlaybackState
+  Timer? _positionSaveTimer;      // Guardado periódico de posición (cada 5s)
   bool _isRefreshingLibrary = false;
   bool _isSyncing = false;
   bool _hasFinishedStartup = false;
   DateTime? _ignoreMediaChangesUntil;
   final Map<int, Uri> _systemArtworkUriCache = {};
   Uri? _fallbackArtworkFileUri;
+
+  // Bug #9: Estado de selección múltiple
+  final Set<int> _selectedSongIds = {};
 
   // Getters
   List<SongModel> get allSongs => _allSongs;
@@ -109,6 +114,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   OnAudioQuery get audioQuery => _audioQuery;
   Set<int> get favoriteIds => _favoriteIds;
   bool get isSyncing => _isSyncing;
+
+  // Bug #9: Getters de selección múltiple
+  bool get isSelectionMode => _selectedSongIds.isNotEmpty;
+  Set<int> get selectedSongIds => Set.unmodifiable(_selectedSongIds);
 
   // Enabled tabs (ordered list of tab IDs)
   List<String> _enabledTabs = List.from(StatePersistence.defaultEnabledTabs);
@@ -217,29 +226,53 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _hasFinishedStartup = true;
     _ignoreMediaChangesUntil = DateTime.now().add(const Duration(seconds: 3));
 
-    print('[SQL] Buscando datos indexados en SQLite...');
-    final restoredFromDatabase = await _restoreFromDatabase();
-    if (restoredFromDatabase) {
-      print('[SQL] Datos restaurados correctamente desde SQLite.');
-      _isLoading = false;
-      notifyListeners();
-      await _loadPlaybackState();
-      _scheduleLibraryRefresh(); // Trigger full refresh in background
-    } else {
-      print(
-          '[SQL] No se encontraron datos en SQLite. Intentando caché JSON...');
-      // Fallback si SQLite está vacío (Primer inicio)
-      final restoredFromCache = await _restoreLibraryCache();
-      if (restoredFromCache) {
-        print('[SQL] Datos restaurados desde caché JSON.');
+    // Bug #8 fix: liberar la UI lo antes posible cargando desde caché primero,
+    // y lanzar el escaneo pesado de forma asíncrona en background.
+    bool restoredFromCache = false;
+
+    try {
+      print('[SQL] Buscando datos indexados en SQLite...');
+      final restoredFromDatabase = await _restoreFromDatabase();
+      if (restoredFromDatabase) {
+        print('[SQL] Datos restaurados correctamente desde SQLite.');
+        restoredFromCache = true;
         _isLoading = false;
         notifyListeners();
         await _loadPlaybackState();
-      } else {
-        print(
-            '[SQL] Cargando biblioteca desde el dispositivo por primera vez...');
+        // Refresh asíncrono en background — no bloquea la UI
+        unawaited(_refreshLibraryFromDevice(showLoading: false));
+      }
+    } catch (e) {
+      debugPrint('[init] Error restaurando desde SQLite: $e');
+    }
+
+    if (!restoredFromCache) {
+      try {
+        print('[SQL] No se encontraron datos en SQLite. Intentando caché JSON...');
+        final restoredFromJson = await _restoreLibraryCache();
+        if (restoredFromJson) {
+          print('[SQL] Datos restaurados desde caché JSON.');
+          restoredFromCache = true;
+          _isLoading = false;
+          notifyListeners();
+          await _loadPlaybackState();
+          // Refresh asíncrono en background
+          unawaited(_refreshLibraryFromDevice(showLoading: false));
+        }
+      } catch (e) {
+        debugPrint('[init] Error restaurando desde caché JSON: $e');
+      }
+    }
+
+    if (!restoredFromCache) {
+      try {
+        print('[SQL] Cargando biblioteca desde el dispositivo por primera vez...');
         await _refreshLibraryFromDevice(showLoading: true);
         await _loadPlaybackState();
+      } catch (e) {
+        debugPrint('[init] Error en escaneo inicial: $e');
+        _isLoading = false;
+        notifyListeners();
       }
     }
 
@@ -248,11 +281,22 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   void _listenToPlayer() {
     _player.currentIndexStream.listen((index) async {
-      if (index != null &&
-          index != _currentIndex &&
-          index < _currentPlaylist.length) {
-        _currentIndex = index;
-        _currentSong = _currentPlaylist[_currentIndex];
+      if (index != null && index < _currentPlaylist.length) {
+        final currentTag = _player.sequenceState?.currentSource?.tag;
+        if (currentTag is MediaItem) {
+          final foundIndex =
+              _currentPlaylist.indexWhere((s) => s.data == currentTag.id);
+          if (foundIndex != -1) {
+            _currentIndex = foundIndex;
+            _currentSong = _currentPlaylist[_currentIndex];
+          } else {
+            _currentIndex = index.clamp(0, _currentPlaylist.length - 1);
+            _currentSong = _currentPlaylist[_currentIndex];
+          }
+        } else {
+          _currentIndex = index.clamp(0, _currentPlaylist.length - 1);
+          _currentSong = _currentPlaylist[_currentIndex];
+        }
         _savePlaybackState();
         notifyListeners();
 
@@ -308,6 +352,14 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         unawaited(playNextFolder());
       }
     };
+
+    // Guardado continuo de posición cada 5 segundos mientras se reproduce,
+    // para que al cerrar la app (sin pausa) se recupere el segundo exacto.
+    _positionSaveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (_player.playing && _currentSong != null) {
+        _savePlaybackState();
+      }
+    });
   }
 
   /// Refresco completamente incremental.
@@ -362,17 +414,14 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         result = await _applyIncrementalSync(freshSongs);
       }
     } finally {
-      final shouldNotifyDone =
-          showLoading || _isSyncing || _isIndexing || result?.hasChanges == true;
       _isRefreshingLibrary = false;
       _isIndexing = false;
       _isSyncing = false;
       _indexingCurrentTitle = null;
       _isLoading = false;
-      // Solo notifica si algo cambió o si estábamos en modo loading
-      if (showLoading || (result != null && result.hasChanges)) {
-        notifyListeners();
-      }
+      // Bug #1 fix: siempre notificar para garantizar que los spinners
+      // desaparezcan aunque no haya cambios en la biblioteca.
+      notifyListeners();
     }
     return result;
   }
@@ -1113,7 +1162,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     try {
       await _syncPlayerLoopMode();
       await _handler.loadPlaylist(mediaItems, _currentIndex);
-      await _savePlaybackState();
+      _savePlaybackState();
       await _updateHomeWidget();
     } catch (e) {
       debugPrint("Error loading playlist: $e");
@@ -1135,7 +1184,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     try {
       await _handler.skipToQueueItem(_currentIndex);
       await _handler.playDirect();
-      await _savePlaybackState();
+      _savePlaybackState();
       await _updateHomeWidget();
       // Actualizar artwork de la pantalla de bloqueo para esta pista
       if (_currentSong != null) {
@@ -1395,18 +1444,92 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   // --- Queue Management ---
 
   Future<void> reorderQueue(int oldIndex, int newIndex) async {
-    if (newIndex > oldIndex) newIndex -= 1;
-    final song = _currentPlaylist.removeAt(oldIndex);
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+
+    if (oldIndex == newIndex) return;
+
+    final SongModel song = _currentPlaylist.removeAt(oldIndex);
     _currentPlaylist.insert(newIndex, song);
-    _currentIndex = _currentSong == null
-        ? 0
-        : _currentPlaylist.indexWhere((song) => song.id == _currentSong!.id);
-    if (_currentIndex == -1) _currentIndex = 0;
-    await _replacePlaybackQueue(
-      position: _player.position,
-      shouldPlay: _player.playing,
-    );
+
+    // Reajustar el índice de la canción activa para que no salte el indicador rojo
+    if (_currentIndex == oldIndex) {
+      _currentIndex = newIndex;
+    } else if (oldIndex < _currentIndex && newIndex >= _currentIndex) {
+      _currentIndex--;
+    } else if (oldIndex > _currentIndex && newIndex <= _currentIndex) {
+      _currentIndex++;
+    }
+
+    // Sincronizar cola en segundo plano sin interrumpir la música
+    await _handler.moveQueueItem(oldIndex, newIndex);
     notifyListeners();
+  }
+
+  // --- Selección Múltiple (Feature #9) ---
+
+  void toggleSongSelection(int songId) {
+    if (_selectedSongIds.contains(songId)) {
+      _selectedSongIds.remove(songId);
+    } else {
+      _selectedSongIds.add(songId);
+    }
+    notifyListeners();
+  }
+
+  void selectAllSongs(List<SongModel> songs) {
+    _selectedSongIds.addAll(songs.map((s) => s.id));
+    notifyListeners();
+  }
+
+  void clearSelection() {
+    _selectedSongIds.clear();
+    notifyListeners();
+  }
+
+  Future<void> playSelected(List<SongModel> songs) async {
+    final selectedSongs =
+        songs.where((s) => _selectedSongIds.contains(s.id)).toList();
+    if (selectedSongs.isNotEmpty) {
+      clearSelection();
+      await playPlaylist(selectedSongs, 0);
+    }
+  }
+
+  Future<void> addSelectedToQueue(List<SongModel> songs) async {
+    final selectedSongs =
+        songs.where((s) => _selectedSongIds.contains(s.id)).toList();
+    if (selectedSongs.isNotEmpty) {
+      await addAllToQueue(selectedSongs);
+      clearSelection();
+    }
+  }
+
+  Future<void> deleteSelected(List<SongModel> songs) async {
+    final selectedSongs =
+        songs.where((s) => _selectedSongIds.contains(s.id)).toList();
+    for (final song in selectedSongs) {
+      await deleteSong(song);
+    }
+    clearSelection();
+  }
+
+
+  /// Salta directamente a la canción en [index] dentro de la cola actual,
+  /// sin reiniciar ni recargar la lista. Inicia la reproducción inmediatamente
+  /// para evitar congelamiento de la interfaz al tocar un ítem de la cola.
+  Future<void> skipToIndex(int index) async {
+    if (index < 0 || index >= _currentPlaylist.length) return;
+    _currentIndex = index;
+    _currentSong = _currentPlaylist[_currentIndex];
+    notifyListeners();
+    await _handler.skipToQueueItem(_currentIndex);
+    await _handler.playDirect();
+    _savePlaybackState();
+    if (_currentSong != null) {
+      unawaited(_updateCurrentSongArtwork(_currentSong!));
+    }
   }
 
   Future<void> removeFromQueue(int index) async {
@@ -1564,9 +1687,14 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
           await stop();
           _currentIndex = 0;
           _currentSong = null;
+          // Bug #2 fix: notificar inmediatamente cuando la lista queda vacía
+          notifyListeners();
         } else if (wasCurrentSong) {
           _currentIndex = removedIndex.clamp(0, _currentPlaylist.length - 1);
           _currentSong = _currentPlaylist[_currentIndex];
+          // Bug #2 fix: notificar ANTES de reemplazar la cola para que la UI
+          // actualice los metadatos de la nueva canción sin residuos visuales
+          notifyListeners();
           await _replacePlaybackQueue(
             position: Duration.zero,
             shouldPlay: wasPlaying,
@@ -1712,14 +1840,25 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   // --- Internals & Persistence ---
 
-  Future<void> _savePlaybackState() async {
-    if (_currentSong == null) return;
-    await StatePersistence.savePlaybackState(
-      mode: _playbackMode,
-      folderPath: _activeFolderPath,
-      songPath: _currentSong!.data,
-      positionMs: _player.position.inMilliseconds,
-    );
+  void _savePlaybackState() {
+    // Bug #3 fix: debounce de 500ms para no saturar SharedPreferences
+    // durante eventos rápidos como scrubbing o cambios de pista seguidos.
+    _saveDebounce?.cancel();
+    _saveDebounce = Timer(const Duration(milliseconds: 500), () async {
+      if (_currentSong == null) return;
+      try {
+        await StatePersistence.savePlaybackState(
+          mode: _playbackMode,
+          folderPath: _activeFolderPath,
+          songPath: _currentSong!.data,
+          trackId: _currentSong!.id,
+          playlistPaths: _currentPlaylist.map((s) => s.data).toList(),
+          positionMs: _player.position.inMilliseconds,
+        );
+      } catch (e) {
+        debugPrint('[Persistence] Error guardando estado: $e');
+      }
+    });
   }
 
   Future<void> _loadPlaybackState() async {
@@ -1758,8 +1897,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         await _syncPlayerLoopMode();
         final mediaItems =
             await _songsToMediaItems(_currentPlaylist, fast: true);
+        // Bug #3 fix: cargar en estado PAUSADO con seek a la posición guardada.
+        // El usuario decide si retoma la reproducción manualmente.
         await _handler.loadPlaylist(
-            mediaItems, _currentIndex, Duration(milliseconds: positionMs));
+            mediaItems, _currentIndex, Duration(milliseconds: positionMs), false);
         unawaited(_updateCurrentSongArtwork(_currentSong!));
         notifyListeners();
       }
@@ -1795,6 +1936,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _libraryRefreshDebounce?.cancel();
+    _saveDebounce?.cancel();
+    _positionSaveTimer?.cancel();
     super.dispose();
   }
 }

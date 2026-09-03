@@ -4,6 +4,7 @@ import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/audio_provider.dart';
+import '../../services/state_persistence.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/folder_info_modal.dart';
 import '../../widgets/mini_player.dart';
@@ -14,11 +15,14 @@ import 'search_screen.dart';
 class FolderDetailScreen extends StatelessWidget {
   final String folderName;
   final List<SongModel> songs;
+  /// Ruta exacta de la carpeta. Se usa para persistencia de navegación.
+  final String? folderPath;
 
   const FolderDetailScreen({
     super.key,
     required this.folderName,
     required this.songs,
+    this.folderPath,
   });
 
   String _formatTotalDuration(List<SongModel> folderSongs) {
@@ -55,9 +59,17 @@ class FolderDetailScreen extends StatelessWidget {
 
     // Get the first available album art from the folder
     final firstSongWithArt = currentFolderSongs.firstWhere((song) => song.albumId != null, orElse: () => currentFolderSongs.isNotEmpty ? currentFolderSongs.first : songs.first);
-    final String folderPath = currentFolderSongs.isNotEmpty ? currentFolderSongs.first.data.replaceAll(currentFolderSongs.first.displayName, "") : "Directorio desconocido";
+    final String resolvedFolderPath = folderPath ?? (currentFolderSongs.isNotEmpty ? currentFolderSongs.first.data.replaceAll(currentFolderSongs.first.displayName, "") : "Directorio desconocido");
 
-    return Scaffold(
+    return PopScope(
+      // Al salir (back gesture, botón atrás, etc.) limpiamos la carpeta
+      // guardada para que la próxima sesión arranque desde la raíz.
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) {
+          StatePersistence.saveLastBrowsedFolder(null);
+        }
+      },
+      child: Scaffold(
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -82,11 +94,11 @@ class FolderDetailScreen extends StatelessWidget {
               } else if (value == 'reproducir_shuffle') {
                 audioProvider.playPlaylistShuffled(currentFolderSongs);
               } else if (value == 'info') {
-                showFolderInfo(context, folderName, folderPath, currentFolderSongs);
+                showFolderInfo(context, folderName, resolvedFolderPath, currentFolderSongs);
               } else if (value == 'añadir') {
                 audioProvider.addAllToQueue(currentFolderSongs);
               } else if (value == 'delete') {
-                _showDeleteConfirmation(context, audioProvider, folderName, folderPath, currentFolderSongs);
+                _showDeleteConfirmation(context, audioProvider, folderName, resolvedFolderPath, currentFolderSongs);
               }
             },
             itemBuilder: (context) => [
@@ -143,7 +155,7 @@ class FolderDetailScreen extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  folderPath,
+                                  resolvedFolderPath,
                                   style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
@@ -175,7 +187,7 @@ class FolderDetailScreen extends StatelessWidget {
                           isSelected: isSelected,
                           showTrailing: false,
                           onTap: () {
-                            audioProvider.playFolderSongs(folderPath, currentFolderSongs, index);
+                            audioProvider.playFolderSongs(resolvedFolderPath, currentFolderSongs, index);
                           },
                         );
                       },
@@ -189,6 +201,7 @@ class FolderDetailScreen extends StatelessWidget {
           if (audioProvider.currentPlaylist.isNotEmpty) const MiniPlayer(),
         ],
       ),
+      ), // closes PopScope
     );
   }
 

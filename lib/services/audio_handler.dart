@@ -195,13 +195,47 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     this.queue.add(queue);
   }
 
+  Future<void> insertQueueItems(int index, List<MediaItem> items) async {
+    if (items.isEmpty) return;
+    await _serializePlaylistMutation(() async {
+      if (queue.value.isEmpty) {
+        await replacePlaylist(items, 0, Duration.zero, shouldPlay: false);
+        return;
+      }
+
+      final safeIndex = index.clamp(0, queue.value.length);
+      final sources = items.map(_createAudioSource).toList();
+      await _player.insertAudioSources(safeIndex, sources);
+      final updatedQueue = List<MediaItem>.from(queue.value)
+        ..insertAll(safeIndex, items);
+      queue.add(updatedQueue);
+    });
+  }
+
+  Future<void> addQueueItems(List<MediaItem> items) async {
+    await insertQueueItems(queue.value.length, items);
+  }
+
+  Future<void> moveQueueItem(int oldIndex, int newIndex) async {
+    if (oldIndex == newIndex) return;
+    if (oldIndex < 0 || oldIndex >= queue.value.length) return;
+    if (newIndex < 0 || newIndex >= queue.value.length) return;
+    await _serializePlaylistMutation(() async {
+      await _player.moveAudioSource(oldIndex, newIndex);
+      final updatedQueue = List<MediaItem>.from(queue.value);
+      final moved = updatedQueue.removeAt(oldIndex);
+      updatedQueue.insert(newIndex, moved);
+      queue.add(updatedQueue);
+    });
+  }
+
   Future<void> loadPlaylist(List<MediaItem> newQueue, int initialIndex,
-      [Duration? initialPosition]) async {
+      [Duration? initialPosition, bool shouldPlay = true]) async {
     await replacePlaylist(
       newQueue,
       initialIndex,
       initialPosition ?? Duration.zero,
-      shouldPlay: initialPosition == null,
+      shouldPlay: shouldPlay,
     );
   }
 

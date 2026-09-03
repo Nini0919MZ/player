@@ -1,11 +1,23 @@
 import 'package:on_audio_query/on_audio_query.dart';
 
 class TitleUtils {
+  static const Set<String> _unknownTokens = {
+    '<unknown>',
+    'unknown',
+    'null',
+    'undefined',
+  };
+
+  static bool _isUnknownValue(String? value) {
+    if (value == null) return true;
+    final normalized = value.trim().toLowerCase();
+    return normalized.isEmpty || _unknownTokens.contains(normalized);
+  }
+
   static String getDisplayTitle(SongModel song) {
     final title = song.title;
 
-    // Proper validation
-    if (title.trim().isNotEmpty && title != '<unknown>') {
+    if (!_isUnknownValue(title)) {
       return title.trim();
     }
 
@@ -22,13 +34,12 @@ class TitleUtils {
     name = name.replaceAll('_', ' ');
     name = name.replaceAll('-', ' ');
 
-    return name.trim();
+    final normalized = name.trim();
+    return normalized.isEmpty ? 'Título Desconocido' : normalized;
   }
 
   static bool isUnknownArtist(String? artist) {
-    if (artist == null) return true;
-    final normalized = artist.trim().toLowerCase();
-    return normalized.isEmpty || normalized == '<unknown>';
+    return _isUnknownValue(artist);
   }
 
   static String getDisplayArtist(String? artist) {
@@ -41,11 +52,9 @@ class TitleUtils {
   }
 
   static bool isUnknownAlbum(String? album) {
-    if (album == null) return true;
-    final normalized = album.trim().toLowerCase();
-    return normalized.isEmpty ||
-        normalized == '<unknown>' ||
-        normalized == 'unknown album';
+    if (_isUnknownValue(album)) return true;
+    final normalized = album!.trim().toLowerCase();
+    return normalized == 'unknown album';
   }
 
   static String getFolderPath(String filePath) {

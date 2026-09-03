@@ -98,48 +98,163 @@ class _SongsTabState extends State<SongsTab> {
       return const Center(child: Text("No se encontraron canciones"));
     }
 
+    final isSelectionMode = audioProvider.isSelectionMode;
+    final selectedCount = audioProvider.selectedSongIds.length;
+
     return Column(
       children: [
-        CountBanner(count: songs.length, label: 'Canciones'),
+        if (isSelectionMode)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            color: const Color(0xFF252525),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: () => audioProvider.clearSelection(),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '$selectedCount seleccionada${selectedCount == 1 ? '' : 's'}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: Icon(
+                    selectedCount == songs.length
+                        ? Icons.select_all
+                        : Icons.deselect,
+                    color: Colors.white,
+                  ),
+                  tooltip: selectedCount == songs.length
+                      ? 'Deseleccionar todo'
+                      : 'Seleccionar todo',
+                  onPressed: () {
+                    if (selectedCount == songs.length) {
+                      audioProvider.clearSelection();
+                    } else {
+                      audioProvider.selectAllSongs(songs);
+                    }
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.play_arrow, color: AppTheme.primaryColor),
+                  tooltip: 'Reproducir selección',
+                  onPressed: selectedCount > 0
+                      ? () => audioProvider.playSelected(songs)
+                      : null,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.queue_music, color: Colors.white),
+                  tooltip: 'Añadir a la cola',
+                  onPressed: selectedCount > 0
+                      ? () => audioProvider.addSelectedToQueue(songs)
+                      : null,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.redAccent),
+                  tooltip: 'Eliminar seleccionadas',
+                  onPressed: selectedCount > 0
+                      ? () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              backgroundColor: const Color(0xFF1E1E1E),
+                              title: const Text("Eliminar canciones",
+                                  style: TextStyle(color: Colors.white)),
+                              content: Text(
+                                "¿Estás seguro de que quieres eliminar las $selectedCount canciones seleccionadas?",
+                                style: const TextStyle(color: Colors.grey),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text("CANCELAR",
+                                      style: TextStyle(color: Colors.teal)),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text("ELIMINAR",
+                                      style: TextStyle(color: Colors.red)),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm == true) {
+                            await audioProvider.deleteSelected(songs);
+                          }
+                        }
+                      : null,
+                ),
+              ],
+            ),
+          )
+        else
+          CountBanner(count: songs.length, label: 'Canciones'),
         Expanded(
           child: LayoutBuilder(builder: (context, constraints) {
             return Stack(
               children: [
-          ListView.builder(
-            controller: _scrollController,
-            itemCount: songs.length,
-            itemExtent: 64.0,
-            itemBuilder: (context, index) {
-              final song = songs[index];
-              final isSelected = audioProvider.currentSong?.id == song.id;
+                ListView.builder(
+                  controller: _scrollController,
+                  itemCount: songs.length,
+                  itemExtent: 64.0,
+                  itemBuilder: (context, index) {
+                    final song = songs[index];
+                    final isSelected = audioProvider.currentSong?.id == song.id;
+                    final isChecked =
+                        audioProvider.selectedSongIds.contains(song.id);
 
-              return Dismissible(
-                key: ValueKey('${song.id}_${song.data}'),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 20.0),
-                  color: Colors.red,
-                  child: const Icon(Icons.delete, color: Colors.white),
-                ),
-                confirmDismiss: (direction) async {
-                  return await _showDeleteConfirmation(
-                      context, song, audioProvider);
-                },
-                onDismissed: (direction) {
-                  // Actual deletion is handled in confirmDismiss to show SnackBar
-                  // or here if we want to be sure it's removed from local UI first.
-                },
-                child: SongListTile(
-                  song: song,
-                  isSelected: isSelected,
-                  onTap: () {
-                    audioProvider.playPlaylist(songs, index);
+                    if (isSelectionMode) {
+                      return SongListTile(
+                        song: song,
+                        isSelected: isSelected,
+                        isSelectionMode: true,
+                        isChecked: isChecked,
+                        onLongPress: () =>
+                            audioProvider.toggleSongSelection(song.id),
+                        onCheckChanged: () =>
+                            audioProvider.toggleSongSelection(song.id),
+                        onTap: () =>
+                            audioProvider.toggleSongSelection(song.id),
+                      );
+                    }
+
+                    return Dismissible(
+                      key: ValueKey('${song.id}_${song.data}'),
+                      direction: DismissDirection.endToStart,
+                      background: Container(
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.only(right: 20.0),
+                        color: Colors.red,
+                        child: const Icon(Icons.delete, color: Colors.white),
+                      ),
+                      confirmDismiss: (direction) async {
+                        return await _showDeleteConfirmation(
+                            context, song, audioProvider);
+                      },
+                      onDismissed: (direction) {
+                        // Handled in confirmDismiss
+                      },
+                      child: SongListTile(
+                        song: song,
+                        isSelected: isSelected,
+                        isSelectionMode: false,
+                        isChecked: false,
+                        onLongPress: () =>
+                            audioProvider.toggleSongSelection(song.id),
+                        onTap: () {
+                          audioProvider.playPlaylist(songs, index);
+                        },
+                      ),
+                    );
                   },
                 ),
-              );
-            },
-          ),
+
 
           // Alphabet Sidebar
           Positioned(
