@@ -297,7 +297,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
           _currentIndex = index.clamp(0, _currentPlaylist.length - 1);
           _currentSong = _currentPlaylist[_currentIndex];
         }
-        _savePlaybackState();
+        await savePlaybackStateImmediate();
         notifyListeners();
 
         // Cargar portada de forma diferida solo para la canción actual (evita OutOfMemoryError)
@@ -353,11 +353,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
     };
 
-    // Guardado continuo de posición cada 5 segundos mientras se reproduce,
+    // Guardado continuo de posición cada 2 segundos mientras se reproduce directamente,
     // para que al cerrar la app (sin pausa) se recupere el segundo exacto.
-    _positionSaveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _positionSaveTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       if (_player.playing && _currentSong != null) {
-        _savePlaybackState();
+        savePlaybackStateImmediate();
       }
     });
   }
@@ -1029,8 +1029,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.detached) {
-      _savePlaybackState();
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      unawaited(savePlaybackStateImmediate());
     }
   }
 
@@ -1197,15 +1199,20 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> togglePlayPause() async {
-    _player.playing
-        ? await _handler.pauseDirect()
-        : await _handler.playDirect();
-    _updateHomeWidget();
+    if (_player.playing) {
+      await _handler.pauseDirect();
+      await savePlaybackStateImmediate();
+    } else {
+      await _handler.playDirect();
+    }
+    await _updateHomeWidget();
   }
 
   Future<void> stop() async {
+    // Guardar la pista activa y la posición actual antes de detener el reproductor
+    final pos = _player.position.inMilliseconds;
+    await savePlaybackStateImmediate(customPositionMs: pos);
     await _handler.stopDirect();
-    await _player.seek(Duration.zero);
     await _updateHomeWidget();
     notifyListeners();
   }
@@ -1840,24 +1847,30 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   // --- Internals & Persistence ---
 
-  void _savePlaybackState() {
-    // Bug #3 fix: debounce de 500ms para no saturar SharedPreferences
-    // durante eventos rápidos como scrubbing o cambios de pista seguidos.
+  Future<void> savePlaybackStateImmediate({int? customPositionMs}) async {
     _saveDebounce?.cancel();
-    _saveDebounce = Timer(const Duration(milliseconds: 500), () async {
-      if (_currentSong == null) return;
-      try {
-        await StatePersistence.savePlaybackState(
-          mode: _playbackMode,
-          folderPath: _activeFolderPath,
-          songPath: _currentSong!.data,
-          trackId: _currentSong!.id,
-          playlistPaths: _currentPlaylist.map((s) => s.data).toList(),
-          positionMs: _player.position.inMilliseconds,
-        );
-      } catch (e) {
-        debugPrint('[Persistence] Error guardando estado: $e');
-      }
+    if (_currentSong == null) return;
+    try {
+      final pos = customPositionMs ?? _player.position.inMilliseconds;
+      await StatePersistence.savePlaybackState(
+        mode: _playbackMode,
+        folderPath: _activeFolderPath,
+        songPath: _currentSong!.data,
+        trackId: _currentSong!.id,
+        playlistPaths: _currentPlaylist.map((s) => s.data).toList(),
+        positionMs: pos >= 0 ? pos : 0,
+      );
+      debugPrint(
+          '[Persistence] Estado guardado inmediatamente: ${_currentSong!.title} ($pos ms)');
+    } catch (e) {
+      debugPrint('[Persistence] Error guardando estado inmediato: $e');
+    }
+  }
+
+  void _savePlaybackState() {
+    _saveDebounce?.cancel();
+    _saveDebounce = Timer(const Duration(milliseconds: 300), () async {
+      await savePlaybackStateImmediate();
     });
   }
 
@@ -1867,43 +1880,102 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     final mode = state['mode'] as PlaybackMode;
     final folderPath = state['folderPath'] as String?;
     final songPath = state['songPath'] as String?;
+    final trackId = state['trackId'] as int?;
+    final List<String> playlistPaths =
+        List<String>.from(state['playlistPaths'] ?? []);
     final positionMs = state['positionMs'] as int;
 
-    if (songPath != null) {
-      List<SongModel> targetQueue = [];
+    debugPrint(
+        '[Persistence] Cargando estado previo: songPath=$songPath, trackId=$trackId, pos=${positionMs}ms, mode=$mode');
+
+    if (songPath == null && trackId == null) {
+      return;
+    }
+
+    if (_allSongs.isEmpty) {
+      debugPrint('[Persistence] _allSongs está vacío, no se puede restaurar canción');
+      return;
+    }
+
+    List<SongModel> targetQueue = [];
+
+    // 1. Intentar reconstruir targetQueue desde las playlistPaths guardadas
+    if (playlistPaths.isNotEmpty) {
+      final songMap = {for (var s in _allSongs) s.data: s};
+      final reconstructed = playlistPaths
+          .map((p) => songMap[p])
+          .whereType<SongModel>()
+          .toList();
+      if (reconstructed.isNotEmpty) {
+        targetQueue = reconstructed;
+      }
+    }
+
+    // 2. Si no hay playlistPaths guardadas o falló, usar modo carpeta o global
+    if (targetQueue.isEmpty) {
       if (mode == PlaybackMode.folder && folderPath != null) {
-        targetQueue =
-            _allSongs.where((s) => s.data.startsWith(folderPath)).toList();
+        final normFolder = _normalizeFolderPath(folderPath);
+        targetQueue = _allSongs
+            .where((s) => _normalizeFolderPath(_getParentPath(s)) == normFolder)
+            .toList();
         _playbackMode = PlaybackMode.folder;
         _activeFolderPath = folderPath;
         _folderQueue = List.from(targetQueue);
       } else {
-        targetQueue = _globalQueue;
+        targetQueue = _globalQueue.isNotEmpty ? _globalQueue : _allSongs;
         _playbackMode = PlaybackMode.global;
         _folderQueue = [];
       }
+    }
 
-      if (targetQueue.isEmpty && _allSongs.isNotEmpty) {
-        targetQueue = _globalQueue;
+    if (targetQueue.isEmpty) {
+      targetQueue = _allSongs;
+      _playbackMode = PlaybackMode.global;
+    }
+
+    // 3. Buscar la canción activa por songPath o trackId
+    int index = targetQueue.indexWhere(
+      (s) =>
+          (songPath != null && s.data == songPath) ||
+          (trackId != null && s.id == trackId),
+    );
+
+    // 4. Si no se encontró en targetQueue, buscar en _allSongs y usar _allSongs como fallback
+    if (index == -1) {
+      final globalIndex = _allSongs.indexWhere(
+        (s) =>
+            (songPath != null && s.data == songPath) ||
+            (trackId != null && s.id == trackId),
+      );
+      if (globalIndex != -1) {
+        targetQueue = _allSongs;
         _playbackMode = PlaybackMode.global;
+        index = globalIndex;
       }
+    }
 
-      final index = targetQueue.indexWhere((s) => s.data == songPath);
-      if (index != -1) {
-        _currentPlaylist = targetQueue;
-        _currentIndex = index;
-        _currentSong = _currentPlaylist[_currentIndex];
+    if (index != -1) {
+      _currentPlaylist = targetQueue;
+      _currentIndex = index;
+      _currentSong = _currentPlaylist[_currentIndex];
 
-        await _syncPlayerLoopMode();
-        final mediaItems =
-            await _songsToMediaItems(_currentPlaylist, fast: true);
-        // Bug #3 fix: cargar en estado PAUSADO con seek a la posición guardada.
-        // El usuario decide si retoma la reproducción manualmente.
-        await _handler.loadPlaylist(
-            mediaItems, _currentIndex, Duration(milliseconds: positionMs), false);
-        unawaited(_updateCurrentSongArtwork(_currentSong!));
-        notifyListeners();
-      }
+      await _syncPlayerLoopMode();
+      final mediaItems =
+          await _songsToMediaItems(_currentPlaylist, fast: true);
+      // Cargar en estado PAUSADO con seek a la posición guardada
+      await _handler.loadPlaylist(
+        mediaItems,
+        _currentIndex,
+        Duration(milliseconds: positionMs),
+        false, // no reproducir automáticamente
+      );
+      unawaited(_updateCurrentSongArtwork(_currentSong!));
+      notifyListeners();
+      debugPrint(
+          '[Persistence] Canción restaurada con éxito: ${_currentSong?.title} en índice $_currentIndex a ${positionMs}ms');
+    } else {
+      debugPrint(
+          '[Persistence] No se encontró la canción guardada ($songPath, $trackId) en la biblioteca');
     }
   }
 
