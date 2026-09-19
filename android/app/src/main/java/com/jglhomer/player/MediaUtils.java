@@ -47,6 +47,7 @@ public class MediaUtils {
             if (cached != null) {
                 return new HashMap<>(cached);
             }
+
             Map<String, String> result = getWmaMetadata(path, file, metadata);
             WMA_METADATA_CACHE.put(cacheKey, new HashMap<>(result));
             return result;
@@ -108,6 +109,27 @@ public class MediaUtils {
         }
 
         return metadata;
+    }
+
+    public static String getEmbeddedLyrics(String path) {
+        try {
+            MediaInformationSession session = FFprobeKit.getMediaInformation(path);
+            MediaInformation information = session.getMediaInformation();
+            if (information == null || information.getTags() == null) {
+                return null;
+            }
+            org.json.JSONObject tags = information.getTags();
+            String[] keys = {"lyrics", "unsyncedlyrics", "unsynchronised_lyrics"};
+            for (String key : keys) {
+                String value = tag(tags, key);
+                if (value != null && !value.trim().isEmpty()) {
+                    return value.trim();
+                }
+            }
+        } catch (Exception e) {
+            Log.w("MediaUtils", "No se pudieron leer letras incrustadas: " + path, e);
+        }
+        return null;
     }
 
     private static Map<String, String> getWmaMetadata(

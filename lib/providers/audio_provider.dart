@@ -17,6 +17,7 @@ import '../services/artwork_cache_service.dart';
 import '../models/duration_state.dart';
 import '../services/audio_handler.dart';
 import '../services/state_persistence.dart';
+import '../services/lyrics_service.dart';
 import '../services/storage_scanner.dart';
 import '../services/library_database.dart';
 import '../services/library_sync_service.dart';
@@ -79,6 +80,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   SongModel? _currentSong;
   Set<int> _favoriteIds = {};
   Map<String, List<String>> _savedPlaylists = {};
+  LyricsSource _lyricsSource = LyricsSource.embedded;
+  bool _lyricsVisible = true;
   DateTime? _lastTapTime;
   Timer? _libraryRefreshDebounce;
   Timer? _saveDebounce; // Bug #3: debounce para _savePlaybackState
@@ -119,6 +122,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Set<int> get favoriteIds => _favoriteIds;
   Map<String, List<String>> get savedPlaylists =>
       Map.unmodifiable(_savedPlaylists);
+  LyricsSource get lyricsSource => _lyricsSource;
+  bool get lyricsVisible => _lyricsVisible;
   bool get isSyncing => _isSyncing;
   int get recentSongsLimit => _recentSongsLimit;
   String get activeTabId => _activeTabId;
@@ -2085,6 +2090,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _loadPlaybackState() async {
+    _lyricsSource = await StatePersistence.loadLyricsSource();
+    _lyricsVisible = await StatePersistence.loadLyricsVisible();
     _favoriteIds = await StatePersistence.loadFavorites();
     final state = await StatePersistence.loadPlaybackState();
     final mode = state['mode'] as PlaybackMode;
@@ -2184,6 +2191,21 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       debugPrint(
           '[Persistence] No se encontró la canción guardada ($songPath, $trackId) en la biblioteca');
     }
+  }
+
+  Future<void> setLyricsSource(LyricsSource source) async {
+    if (_lyricsSource == source) return;
+    _lyricsSource = source;
+    LyricsService.clearCache();
+    await StatePersistence.saveLyricsSource(source);
+    notifyListeners();
+  }
+
+  Future<void> setLyricsVisible(bool visible) async {
+    if (_lyricsVisible == visible) return;
+    _lyricsVisible = visible;
+    await StatePersistence.saveLyricsVisible(visible);
+    notifyListeners();
   }
 
   Future<void> _requestInitialPermissions() async {

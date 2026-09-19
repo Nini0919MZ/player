@@ -96,6 +96,14 @@ class MainActivity : AudioServiceActivity() {
                         result.error("INVALID_ARGUMENT", "filePath is required", null)
                     }
                 }
+                "extractEmbeddedLyrics" -> {
+                    val filePath = call.argument<String>("filePath")
+                    if (filePath != null) {
+                        result.success(MediaUtils.getEmbeddedLyrics(filePath))
+                    } else {
+                        result.error("INVALID_ARGUMENT", "filePath is required", null)
+                    }
+                }
                 "init_reverb" -> {
                     val sessionId = call.argument<Int>("sessionId") ?: 0
                     if (sessionId != 0) {
