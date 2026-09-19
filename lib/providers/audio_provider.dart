@@ -109,6 +109,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _navigationBusy = false;
   final List<_FolderNavigationRequest> _pendingFolderNavigation = [];
   bool _folderNavigationBusy = false;
+  bool? _folderNavigationShouldPlay;
 
   // Bug #9: Estado de selección múltiple
   final Set<int> _selectedSongIds = {};
@@ -1097,8 +1098,12 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     await _playInternal(_allSongs, targetIndex);
   }
 
-  Future<void> playFolderSongs(String folderPath, List<SongModel> folderSongs,
-      [int? startIndex]) async {
+  Future<void> playFolderSongs(
+    String folderPath,
+    List<SongModel> folderSongs, [
+    int? startIndex,
+    bool? shouldPlay,
+  ]) async {
     setPlaybackMode(PlaybackMode.folder, folderPath: folderPath);
     _folderQueue = List.from(folderSongs);
 
@@ -1109,7 +1114,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       if (targetIndex == -1) targetIndex = 0;
     }
 
-    await _playInternal(_folderQueue, targetIndex);
+    await _playInternal(_folderQueue, targetIndex, shouldPlay: shouldPlay);
   }
 
   // Backwards compatibility for implicit playlist triggers
@@ -1155,7 +1160,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  Future<void> _playInternal(List<SongModel> songs, int startIndex) async {
+  Future<void> _playInternal(
+    List<SongModel> songs,
+    int startIndex, {
+    bool? shouldPlay,
+  }) async {
     if (songs.isEmpty) return;
 
     // Validate bounds
@@ -1178,11 +1187,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
 
     if (canReuseCurrentQueue) {
-      await _jumpWithinCurrentPlaylist();
+      await _jumpWithinCurrentPlaylist(shouldPlay: shouldPlay);
       return;
     }
 
-    await _loadCurrentPlaylistFromScratch();
+    await _loadCurrentPlaylistFromScratch(shouldPlay: shouldPlay);
   }
 
   bool _hasSameSongOrder(List<SongModel> first, List<SongModel> second) {
@@ -1193,7 +1202,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     return true;
   }
 
-  Future<void> _loadCurrentPlaylistFromScratch() async {
+  Future<void> _loadCurrentPlaylistFromScratch({bool? shouldPlay}) async {
     final loadGeneration = ++_queueLoadGeneration;
     // Ruta rápida para listas grandes: no bloquear el inicio de reproducción
     // esperando la carátula de cada pista. Usamos el fallback placeholder para
@@ -1220,6 +1229,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       await _handler.loadPlaylist(
         mediaItems,
         loadInBackground ? 0 : _currentIndex,
+        null,
+        shouldPlay ?? true,
       );
       _savePlaybackState();
       await _updateHomeWidget();
@@ -1263,10 +1274,14 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _jumpWithinCurrentPlaylist() async {
+  Future<void> _jumpWithinCurrentPlaylist({bool? shouldPlay}) async {
     try {
       await _handler.skipToQueueItem(_currentIndex);
-      await _handler.playDirect();
+      if (shouldPlay ?? true) {
+        await _handler.playDirect();
+      } else {
+        await _handler.pauseDirect();
+      }
       _savePlaybackState();
       await _updateHomeWidget();
       // Actualizar artwork de la pantalla de bloqueo para esta pista
@@ -1280,6 +1295,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> togglePlayPause() async {
+    if (_folderNavigationBusy) {
+      _folderNavigationShouldPlay = !_player.playing;
+    }
     if (_player.playing) {
       await _handler.pauseDirect();
       await savePlaybackStateImmediate();
@@ -1526,6 +1544,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (_folderNavigationBusy) return;
 
     _folderNavigationBusy = true;
+    _folderNavigationShouldPlay ??= _player.playing;
     try {
       while (_pendingFolderNavigation.isNotEmpty) {
         final request = _pendingFolderNavigation.removeAt(0);
@@ -1540,6 +1559,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
     } finally {
       _folderNavigationBusy = false;
+      _folderNavigationShouldPlay = null;
     }
   }
 
@@ -1582,6 +1602,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
           nextFolderPath,
           folderSongs,
           playLastTrack ? folderSongs.length - 1 : 0,
+          _folderNavigationShouldPlay,
         );
         return;
       }

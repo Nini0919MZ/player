@@ -7,6 +7,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   late final AudioPlayer _player;
   ConcatenatingAudioSource _playlist = ConcatenatingAudioSource(children: []);
   Future<void> _playlistMutation = Future.value();
+  bool _changingPlaylist = false;
 
   VoidCallback? onToggleFavorite;
   VoidCallback? onTrackCompleted;
@@ -70,6 +71,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   void _triggerNextTrackSafe() {
+    if (_changingPlaylist) return;
     if (_isAdvancing) return;
     _isAdvancing = true;
 
@@ -282,46 +284,58 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }) async {
     var hasQueue = false;
     var sourceLoaded = false;
+    var sourceLoadFailed = false;
 
     await _serializePlaylistMutation(() async {
-      // Safe Mode Switching: rebuild ConcatenatingAudioSource entirely to prevent caching bugs
-      await _player.stop();
-
-      if (newQueue.isEmpty) {
-        queue.add([]);
-        mediaItem.add(null);
-        return;
-      }
-      hasQueue = true;
-
-      final safeIndex = initialIndex.clamp(0, newQueue.length - 1);
-      queue.add(newQueue);
-      mediaItem.add(newQueue[safeIndex]);
-
-      _playlist = ConcatenatingAudioSource(
-        children: newQueue.map(_createAudioSource).toList(),
-      );
-
-      // Explicitly set the initial index down at the native source creation!
+      _changingPlaylist = true;
+      _isAdvancing = false;
+      _debounceTimer?.cancel();
       try {
-        await _player.setAudioSource(
-          _playlist,
-          initialIndex: safeIndex,
-          initialPosition: initialPosition,
-        );
-        sourceLoaded = true;
-      } catch (e, st) {
-        debugPrint(
-          '[AudioHandler] Unable to load audio source, skipping track: $e',
-        );
-        debugPrint('$st');
-        _triggerNextTrackSafe();
-      }
+        // Safe Mode Switching: rebuild ConcatenatingAudioSource entirely to prevent caching bugs
+        await _player.stop();
 
-      if (!shouldPlay && sourceLoaded) {
-        _broadcastState(_player.playbackEvent);
+        if (newQueue.isEmpty) {
+          queue.add([]);
+          mediaItem.add(null);
+          return;
+        }
+        hasQueue = true;
+
+        final safeIndex = initialIndex.clamp(0, newQueue.length - 1);
+        queue.add(newQueue);
+        mediaItem.add(newQueue[safeIndex]);
+
+        _playlist = ConcatenatingAudioSource(
+          children: newQueue.map(_createAudioSource).toList(),
+        );
+
+        // Explicitly set the initial index down at the native source creation!
+        try {
+          await _player.setAudioSource(
+            _playlist,
+            initialIndex: safeIndex,
+            initialPosition: initialPosition,
+          );
+          sourceLoaded = true;
+        } catch (e, st) {
+          debugPrint(
+            '[AudioHandler] Unable to load audio source, skipping track: $e',
+          );
+          debugPrint('$st');
+          sourceLoadFailed = true;
+        }
+
+        if (!shouldPlay && sourceLoaded) {
+          _broadcastState(_player.playbackEvent);
+        }
+      } finally {
+        _changingPlaylist = false;
       }
     });
+
+    if (sourceLoadFailed) {
+      _triggerNextTrackSafe();
+    }
 
     if (shouldPlay && hasQueue && sourceLoaded) {
       await _player.play();
