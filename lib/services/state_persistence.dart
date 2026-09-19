@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'lyrics_service.dart';
 
 enum PlaybackMode { folder, global }
 
@@ -18,6 +19,8 @@ class StatePersistence {
   static const String _playlistKey = 'playback_playlist_paths_v1';
   static const String _favoritesKey = 'favorites';
   static const String _playlistsKey = 'saved_playlists_v1';
+  static const String _lyricsSourceKey = 'lyrics_source_v1';
+  static const String _lyricsVisibleKey = 'lyrics_visible_v1';
   static const String _autoModeKey = 'auto_mode_enabled';
   static const String _legacyAutoModeKey = 'modo_auto';
   static const String _epicenterEnabledKey = 'epicenter_enabled';
@@ -165,6 +168,28 @@ class StatePersistence {
   static Future<void> savePlaylists(Map<String, List<String>> playlists) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_playlistsKey, jsonEncode(playlists));
+  }
+
+  static Future<LyricsSource> loadLyricsSource() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_lyricsSourceKey) == LyricsSource.internet.name
+        ? LyricsSource.internet
+        : LyricsSource.embedded;
+  }
+
+  static Future<void> saveLyricsSource(LyricsSource source) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lyricsSourceKey, source.name);
+  }
+
+  static Future<bool> loadLyricsVisible() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_lyricsVisibleKey) ?? true;
+  }
+
+  static Future<void> saveLyricsVisible(bool visible) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_lyricsVisibleKey, visible);
   }
 
   // Enabled tabs persistence (ordered list of tab IDs)

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/audio_provider.dart';
 import '../../services/state_persistence.dart';
+import '../../services/lyrics_service.dart';
 
 class SettingsTab extends StatelessWidget {
   const SettingsTab({super.key});
@@ -174,6 +175,48 @@ class SettingsTab extends StatelessWidget {
 
           // ─── Sección: Biblioteca ───────────────────────────────────────
           _SectionHeader(label: 'Biblioteca'),
+          ListTile(
+            leading:
+                const Icon(Icons.lyrics_outlined, color: Colors.tealAccent),
+            title: const Text('Fuente de letras',
+                style: TextStyle(color: Colors.white)),
+            subtitle: Text(
+              audioProvider.lyricsSource == LyricsSource.embedded
+                  ? 'Leer letras incrustadas en cada archivo'
+                  : 'Buscar letras en internet mediante LRCLIB',
+              style: const TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+            trailing: DropdownButton<LyricsSource>(
+              value: audioProvider.lyricsSource,
+              dropdownColor: const Color(0xFF252525),
+              underline: const SizedBox.shrink(),
+              style: const TextStyle(color: Colors.tealAccent),
+              items: const [
+                DropdownMenuItem(
+                  value: LyricsSource.embedded,
+                  child: Text('Incrustadas'),
+                ),
+                DropdownMenuItem(
+                  value: LyricsSource.internet,
+                  child: Text('Internet'),
+                ),
+              ],
+              onChanged: (value) {
+                if (value != null) audioProvider.setLyricsSource(value);
+              },
+            ),
+          ),
+          SwitchListTile(
+            title: const Text('Mostrar letras',
+                style: TextStyle(color: Colors.white)),
+            subtitle: const Text(
+                'Muestra u oculta el recuadro de letras en el reproductor',
+                style: TextStyle(color: Colors.grey, fontSize: 12)),
+            value: audioProvider.lyricsVisible,
+            onChanged: audioProvider.setLyricsVisible,
+            activeThumbColor: Colors.tealAccent,
+            activeTrackColor: Colors.teal,
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Column(

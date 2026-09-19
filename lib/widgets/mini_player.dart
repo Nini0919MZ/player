@@ -16,6 +16,7 @@ import '../widgets/song_info_modal.dart';
 import '../screens/artist_detail_screen.dart';
 import '../screens/album_detail_screen.dart';
 import '../services/state_persistence.dart';
+import '../services/lyrics_service.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -629,6 +630,24 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                   ),
                 ),
               ),
+              if (audioProvider.lyricsVisible)
+                FutureBuilder<LyricsResult?>(
+                  future: LyricsService.load(song, audioProvider.lyricsSource),
+                  builder: (context, snapshot) {
+                    final result = snapshot.data;
+                    if (snapshot.connectionState == ConnectionState.waiting ||
+                        result?.hasTimestamps != true) {
+                      return const SizedBox.shrink();
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: _timestampedLyrics(
+                        result!.lines,
+                        audioProvider.player.positionStream,
+                      ),
+                    );
+                  },
+                ),
               const Spacer(flex: 2),
               Row(
                 children: [
@@ -848,6 +867,14 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
     );
   }
 
+  Widget _timestampedLyrics(
+      List<LyricsLine> lines, Stream<Duration> positionStream) {
+    return _SyncedLyricsView(
+      lines: lines,
+      positionStream: positionStream,
+    );
+  }
+
   String _formatDuration(Duration duration) {
     if (duration == Duration.zero) return "0:00";
     final hours = duration.inHours;
@@ -862,5 +889,77 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
 
   String _resolveAlbumLabel(dynamic song) {
     return TitleUtils.getDisplayAlbum(song as SongModel);
+  }
+}
+
+class _SyncedLyricsView extends StatefulWidget {
+  final List<LyricsLine> lines;
+  final Stream<Duration> positionStream;
+
+  const _SyncedLyricsView({
+    required this.lines,
+    required this.positionStream,
+  });
+
+  @override
+  State<_SyncedLyricsView> createState() => _SyncedLyricsViewState();
+}
+
+class _SyncedLyricsViewState extends State<_SyncedLyricsView> {
+  int _activeIndex = -1;
+
+  int _lineAt(Duration position) {
+    var activeIndex = -1;
+    for (var index = 0; index < widget.lines.length; index++) {
+      if (widget.lines[index].timestamp <= position) {
+        activeIndex = index;
+      } else {
+        break;
+      }
+    }
+    return activeIndex;
+  }
+
+  void _updateActiveLine(Duration position) {
+    final nextIndex = _lineAt(position);
+    if (nextIndex == _activeIndex) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || nextIndex == _activeIndex) return;
+      setState(() => _activeIndex = nextIndex);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 72,
+      child: StreamBuilder<Duration>(
+        stream: widget.positionStream,
+        builder: (context, snapshot) {
+          if (snapshot.hasData) _updateActiveLine(snapshot.data!);
+          final activeLine =
+              _activeIndex >= 0 ? widget.lines[_activeIndex] : null;
+          return AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: SizedBox(
+              key: ValueKey(activeLine?.timestamp),
+              width: double.infinity,
+              child: Text(
+                activeLine?.text ?? '',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 }
