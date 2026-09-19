@@ -66,6 +66,7 @@ import io.flutter.plugin.common.MethodChannel.Result;
 import java.io.IOException;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -709,7 +710,12 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
     }
 
     private File convertWmaToWav(File input) throws IOException {
-        File output = File.createTempFile("just_audio_wma_", ".wav", context.getCacheDir());
+        File output = new File(context.getCacheDir(), "just_audio_wma_"
+                + cacheKey(input) + ".wav");
+        if (output.isFile() && output.length() > 44) {
+            Log.d(TAG, "Reusing cached WMA conversion: " + output.getAbsolutePath());
+            return output;
+        }
         try {
             String command = "-y -i " + quoteShellArgument(input.getAbsolutePath())
                     + " -vn -acodec pcm_s16le " + quoteShellArgument(output.getAbsolutePath());
@@ -717,11 +723,28 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
             if (!ReturnCode.isSuccess(session.getReturnCode())) {
                 throw new IOException("FFmpeg WMA conversion failed: " + session.getFailStackTrace());
             }
+
             return output;
         } catch (Exception e) {
             if (!output.delete()) Log.w(TAG, "Unable to delete failed WMA conversion", e);
             if (e instanceof IOException) throw (IOException)e;
             throw new IOException("Unable to convert WMA", e);
+        }
+    }
+
+    private String cacheKey(File input) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            String identity = input.getAbsolutePath() + ":" + input.length() + ":"
+                    + input.lastModified();
+            byte[] hash = digest.digest(identity.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder key = new StringBuilder(hash.length * 2);
+            for (byte value : hash) {
+                key.append(String.format(java.util.Locale.US, "%02x", value));
+            }
+            return key.toString();
+        } catch (Exception e) {
+            throw new IOException("Unable to create WMA cache key", e);
         }
     }
 

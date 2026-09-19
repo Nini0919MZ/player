@@ -15,7 +15,8 @@ class SettingsTab extends StatelessWidget {
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1A1A1A),
-        title: const Text('Configuración', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Configuración',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         leading: Navigator.of(context).canPop()
             ? IconButton(
                 icon: const Icon(Icons.arrow_back),
@@ -37,8 +38,10 @@ class SettingsTab extends StatelessWidget {
           // ─── Sección: Reproducción ─────────────────────────────────────
           _SectionHeader(label: 'Reproducción'),
           SwitchListTile(
-            title: const Text('Modo automático', style: TextStyle(color: Colors.white)),
-            subtitle: const Text('Activa el modo automático (cambia orientación)',
+            title: const Text('Modo automático',
+                style: TextStyle(color: Colors.white)),
+            subtitle: const Text(
+                'Activa el modo automático (cambia orientación)',
                 style: TextStyle(color: Colors.grey, fontSize: 12)),
             value: audioProvider.isAutoModeEnabled,
             onChanged: (v) => audioProvider.setAutoMode(v),
@@ -46,7 +49,8 @@ class SettingsTab extends StatelessWidget {
             activeTrackColor: Colors.teal.withAlpha(100),
           ),
           SwitchListTile(
-            title: const Text('Epicentro habilitado', style: TextStyle(color: Colors.white)),
+            title: const Text('Epicentro habilitado',
+                style: TextStyle(color: Colors.white)),
             subtitle: const Text('Aplica el efecto epicentro al audio',
                 style: TextStyle(color: Colors.grey, fontSize: 12)),
             value: audioProvider.isEpicenterEnabled,
@@ -60,13 +64,16 @@ class SettingsTab extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Intensidad de Epicentro', style: TextStyle(color: Colors.white, fontSize: 14)),
+                  const Text('Intensidad de Epicentro',
+                      style: TextStyle(color: Colors.white, fontSize: 14)),
                   const SizedBox(height: 4),
-                  const Text('Define la cantidad y fuerza de bajo sintetizado que se añadirá a la mezcla.',
+                  const Text(
+                      'Define la cantidad y fuerza de bajo sintetizado que se añadirá a la mezcla.',
                       style: TextStyle(color: Colors.grey, fontSize: 12)),
                   Row(
                     children: [
-                      const Icon(Icons.graphic_eq, color: Colors.grey, size: 20),
+                      const Icon(Icons.graphic_eq,
+                          color: Colors.grey, size: 20),
                       Expanded(
                         child: Slider(
                           value: audioProvider.epicenterIntensity,
@@ -74,38 +81,53 @@ class SettingsTab extends StatelessWidget {
                           max: 100,
                           activeColor: Colors.tealAccent,
                           inactiveColor: Colors.white24,
-                          onChanged: (v) => audioProvider.updateEpicenterSettings(intensity: v),
+                          onChanged: (v) => audioProvider
+                              .updateEpicenterSettings(intensity: v),
                         ),
                       ),
-                      Text('${audioProvider.epicenterIntensity.toInt()}%', style: const TextStyle(color: Colors.white, fontSize: 13)),
+                      Text('${audioProvider.epicenterIntensity.toInt()}%',
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 13)),
                     ],
                   ),
                 ],
               ),
             ),
             Theme(
-              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              data:
+                  Theme.of(context).copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
-                title: const Text('Ajustes Avanzados de Epicentro', style: TextStyle(color: Colors.tealAccent, fontSize: 14)),
-                childrenPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                title: const Text('Ajustes Avanzados de Epicentro',
+                    style: TextStyle(color: Colors.tealAccent, fontSize: 14)),
+                childrenPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 children: [
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Sweep Freq', style: TextStyle(color: Colors.white, fontSize: 14)),
+                      const Text('Sweep Freq',
+                          style: TextStyle(color: Colors.white, fontSize: 14)),
                       const SizedBox(height: 4),
-                      const Text('Ajusta la frecuencia central donde se detectará y restaurará el bajo profundo.', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                      const Text(
+                          'Ajusta la frecuencia central donde se detectará y restaurará el bajo profundo.',
+                          style: TextStyle(color: Colors.grey, fontSize: 12)),
                       Row(
                         children: [
                           Expanded(
                             child: Slider(
-                              value: audioProvider.epicenterSweepFreq.clamp(27.0, 63.0),
-                              min: 27, max: 63,
-                              activeColor: Colors.tealAccent, inactiveColor: Colors.white24,
-                              onChanged: (v) => audioProvider.updateEpicenterSettings(sweepFreq: v),
+                              value: audioProvider.epicenterSweepFreq
+                                  .clamp(27.0, 63.0),
+                              min: 27,
+                              max: 63,
+                              activeColor: Colors.tealAccent,
+                              inactiveColor: Colors.white24,
+                              onChanged: (v) => audioProvider
+                                  .updateEpicenterSettings(sweepFreq: v),
                             ),
                           ),
-                          Text('${audioProvider.epicenterSweepFreq.toInt()} Hz', style: const TextStyle(color: Colors.white, fontSize: 13)),
+                          Text('${audioProvider.epicenterSweepFreq.toInt()} Hz',
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 13)),
                         ],
                       ),
                     ],
@@ -114,20 +136,29 @@ class SettingsTab extends StatelessWidget {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Width', style: TextStyle(color: Colors.white, fontSize: 14)),
+                      const Text('Width',
+                          style: TextStyle(color: Colors.white, fontSize: 14)),
                       const SizedBox(height: 4),
-                      const Text('Controla el rango de frecuencias adyacentes que afectará el efecto de bajo.', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                      const Text(
+                          'Controla el rango de frecuencias adyacentes que afectará el efecto de bajo.',
+                          style: TextStyle(color: Colors.grey, fontSize: 12)),
                       Row(
                         children: [
                           Expanded(
                             child: Slider(
-                              value: audioProvider.epicenterWidth.clamp(0.0, 100.0),
-                              min: 0, max: 100,
-                              activeColor: Colors.tealAccent, inactiveColor: Colors.white24,
-                              onChanged: (v) => audioProvider.updateEpicenterSettings(width: v),
+                              value: audioProvider.epicenterWidth
+                                  .clamp(0.0, 100.0),
+                              min: 0,
+                              max: 100,
+                              activeColor: Colors.tealAccent,
+                              inactiveColor: Colors.white24,
+                              onChanged: (v) => audioProvider
+                                  .updateEpicenterSettings(width: v),
                             ),
                           ),
-                          Text('${audioProvider.epicenterWidth.toInt()}%', style: const TextStyle(color: Colors.white, fontSize: 13)),
+                          Text('${audioProvider.epicenterWidth.toInt()}%',
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 13)),
                         ],
                       ),
                     ],
@@ -144,6 +175,44 @@ class SettingsTab extends StatelessWidget {
           // ─── Sección: Biblioteca ───────────────────────────────────────
           _SectionHeader(label: 'Biblioteca'),
           Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Canciones recientes',
+                    style: TextStyle(color: Colors.white, fontSize: 14)),
+                const Text(
+                    'Ordena por fecha de modificación y define cuántas mostrar.',
+                    style: TextStyle(color: Colors.grey, fontSize: 12)),
+                Row(
+                  children: [
+                    const Icon(Icons.new_releases_outlined,
+                        color: Colors.grey, size: 20),
+                    Expanded(
+                      child: Slider(
+                        value: audioProvider.recentSongsLimit.toDouble(),
+                        min: 100,
+                        max: 10000,
+                        divisions: 99,
+                        activeColor: Colors.tealAccent,
+                        inactiveColor: Colors.white24,
+                        onChanged: (value) => audioProvider.setRecentSongsLimit(
+                          (value / 100).round() * 100,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      audioProvider.recentSongsLimit >= 1000
+                          ? '${(audioProvider.recentSongsLimit / 1000).toStringAsFixed(audioProvider.recentSongsLimit % 1000 == 0 ? 0 : 1)}k'
+                          : '${audioProvider.recentSongsLimit}',
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: OutlinedButton.icon(
               onPressed: () async {
@@ -152,11 +221,12 @@ class SettingsTab extends StatelessWidget {
                 final msg = (result == null || !result.hasChanges)
                     ? 'Biblioteca ya actualizada.'
                     : 'Biblioteca actualizada con cambios.';
-                ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating));
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(msg), behavior: SnackBarBehavior.floating));
               },
               icon: const Icon(Icons.refresh, color: Colors.tealAccent),
-              label: const Text('Refrescar biblioteca', style: TextStyle(color: Colors.tealAccent)),
+              label: const Text('Refrescar biblioteca',
+                  style: TextStyle(color: Colors.tealAccent)),
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: Colors.teal),
                 padding: const EdgeInsets.symmetric(vertical: 12),
@@ -173,7 +243,8 @@ class SettingsTab extends StatelessWidget {
                     backgroundColor: const Color(0xFF222222),
                     title: const Text('Restablecer epicentro',
                         style: TextStyle(color: Colors.white)),
-                    content: const Text('¿Deseas restablecer los parámetros del epicentro?',
+                    content: const Text(
+                        '¿Deseas restablecer los parámetros del epicentro?',
                         style: TextStyle(color: Colors.white70)),
                     actions: [
                       TextButton(
@@ -189,14 +260,14 @@ class SettingsTab extends StatelessWidget {
                 if (ok == true) {
                   await audioProvider.resetEpicenterSettingsToDefault();
                   if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Parámetros restablecidos'),
-                          behavior: SnackBarBehavior.floating));
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('Parámetros restablecidos'),
+                      behavior: SnackBarBehavior.floating));
                 }
               },
               icon: const Icon(Icons.restore, color: Colors.orangeAccent),
-              label: const Text('Restablecer epicentro', style: TextStyle(color: Colors.orangeAccent)),
+              label: const Text('Restablecer epicentro',
+                  style: TextStyle(color: Colors.orangeAccent)),
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: Colors.orange),
                 padding: const EdgeInsets.symmetric(vertical: 12),
@@ -250,13 +321,14 @@ class _TabsSelectorState extends State<_TabsSelector> {
   static const _allTabs = StatePersistence.allAvailableTabs;
 
   static const _tabMeta = <String, _TabMeta>{
-    'folders':        _TabMeta('Carpetas',          Icons.folder_outlined),
-    'songs':          _TabMeta('Canciones',         Icons.music_note_outlined),
-    'favorites':      _TabMeta('Favoritos',         Icons.favorite_border),
-    'albums':         _TabMeta('Álbumes',           Icons.album_outlined),
-    'artists':        _TabMeta('Artistas',          Icons.people_outline),
-    'playlists':      _TabMeta('Listas de reproducción', Icons.queue_music_outlined),
-    'recently_added': _TabMeta('Añadido recientemente', Icons.new_releases_outlined),
+    'folders': _TabMeta('Carpetas', Icons.folder_outlined),
+    'songs': _TabMeta('Canciones', Icons.music_note_outlined),
+    'favorites': _TabMeta('Favoritos', Icons.favorite_border),
+    'albums': _TabMeta('Álbumes', Icons.album_outlined),
+    'artists': _TabMeta('Artistas', Icons.people_outline),
+    'playlists': _TabMeta('Listas de reproducción', Icons.queue_music_outlined),
+    'recently_added':
+        _TabMeta('Añadido recientemente', Icons.new_releases_outlined),
   };
 
   late List<String> _enabled;
@@ -322,10 +394,13 @@ class _TabsSelectorState extends State<_TabsSelector> {
             return AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               decoration: BoxDecoration(
-                color: enabled ? const Color(0xFF1E3A3A) : const Color(0xFF1E1E1E),
+                color:
+                    enabled ? const Color(0xFF1E3A3A) : const Color(0xFF1E1E1E),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: enabled ? Colors.tealAccent.withAlpha(100) : Colors.white10,
+                  color: enabled
+                      ? Colors.tealAccent.withAlpha(100)
+                      : Colors.white10,
                   width: 1,
                 ),
               ),
@@ -335,7 +410,8 @@ class _TabsSelectorState extends State<_TabsSelector> {
                   onTap: isLast ? null : () => _toggle(id),
                   borderRadius: BorderRadius.circular(12),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     child: Row(
                       children: [
                         Icon(
@@ -349,7 +425,8 @@ class _TabsSelectorState extends State<_TabsSelector> {
                             meta.label,
                             style: TextStyle(
                               color: enabled ? Colors.white : Colors.grey,
-                              fontWeight: enabled ? FontWeight.w600 : FontWeight.normal,
+                              fontWeight:
+                                  enabled ? FontWeight.w600 : FontWeight.normal,
                               fontSize: 12,
                             ),
                             maxLines: 2,

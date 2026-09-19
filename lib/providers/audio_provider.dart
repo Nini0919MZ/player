@@ -78,16 +78,20 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   LoopMode _loopMode = LoopMode.off;
   SongModel? _currentSong;
   Set<int> _favoriteIds = {};
+  Map<String, List<String>> _savedPlaylists = {};
   DateTime? _lastTapTime;
   Timer? _libraryRefreshDebounce;
-  Timer? _saveDebounce;           // Bug #3: debounce para _savePlaybackState
-  Timer? _positionSaveTimer;      // Guardado periódico de posición (cada 5s)
+  Timer? _saveDebounce; // Bug #3: debounce para _savePlaybackState
+  Timer? _positionSaveTimer; // Guardado periódico de posición (cada 5s)
   bool _isRefreshingLibrary = false;
   bool _isSyncing = false;
+  int _recentSongsLimit = 100;
+  String _activeTabId = 'songs';
   bool _hasFinishedStartup = false;
   DateTime? _ignoreMediaChangesUntil;
   final Map<int, Uri> _systemArtworkUriCache = {};
   Uri? _fallbackArtworkFileUri;
+  int _queueLoadGeneration = 0;
 
   // Bug #9: Estado de selección múltiple
   final Set<int> _selectedSongIds = {};
@@ -113,7 +117,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   AudioPlayer get player => _player;
   OnAudioQuery get audioQuery => _audioQuery;
   Set<int> get favoriteIds => _favoriteIds;
+  Map<String, List<String>> get savedPlaylists =>
+      Map.unmodifiable(_savedPlaylists);
   bool get isSyncing => _isSyncing;
+  int get recentSongsLimit => _recentSongsLimit;
+  String get activeTabId => _activeTabId;
 
   // Bug #9: Getters de selección múltiple
   bool get isSelectionMode => _selectedSongIds.isNotEmpty;
@@ -202,6 +210,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     await _requestInitialPermissions();
     await ArtworkCacheService.init();
     _isEpicenterEnabled = await StatePersistence.loadEpicenterEnabled();
+    _savedPlaylists = await StatePersistence.loadPlaylists();
+    _recentSongsLimit = await StatePersistence.loadRecentSongsLimit();
+    _activeTabId = await StatePersistence.loadActiveTab() ?? _activeTabId;
 
     // Load enabled tabs preference
     try {
@@ -248,7 +259,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     if (!restoredFromCache) {
       try {
-        print('[SQL] No se encontraron datos en SQLite. Intentando caché JSON...');
+        print(
+            '[SQL] No se encontraron datos en SQLite. Intentando caché JSON...');
         final restoredFromJson = await _restoreLibraryCache();
         if (restoredFromJson) {
           print('[SQL] Datos restaurados desde caché JSON.');
@@ -266,7 +278,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     if (!restoredFromCache) {
       try {
-        print('[SQL] Cargando biblioteca desde el dispositivo por primera vez...');
+        print(
+            '[SQL] Cargando biblioteca desde el dispositivo por primera vez...');
         await _refreshLibraryFromDevice(showLoading: true);
         await _loadPlaybackState();
       } catch (e) {
@@ -1085,9 +1098,16 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (_matchesCurrentGlobalOrder(songs)) {
       await playGlobalQueue(startIndex);
     } else if (_containsWholeLibrary(songs)) {
+      final selectedSong = songs[startIndex.clamp(0, songs.length - 1)];
+      final existingIndex =
+          _globalQueue.indexWhere((song) => song.data == selectedSong.data);
       setPlaybackMode(PlaybackMode.global);
-      _globalQueue = List.from(songs);
-      await _playInternal(_globalQueue, startIndex);
+      if (_globalQueue.length == _allSongs.length && existingIndex != -1) {
+        await _playInternal(_globalQueue, existingIndex);
+      } else {
+        _globalQueue = List.from(songs);
+        await _playInternal(_globalQueue, startIndex);
+      }
     } else {
       await _playInternal(songs, startIndex);
     }
@@ -1154,18 +1174,39 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _loadCurrentPlaylistFromScratch() async {
+    final loadGeneration = ++_queueLoadGeneration;
     // Ruta rápida para listas grandes: no bloquear el inicio de reproducción
     // esperando la carátula de cada pista. Usamos el fallback placeholder para
     // arrancar el player de inmediato y luego actualizamos la canción actual.
     final useFast = _currentPlaylist.length > 20;
-    final mediaItems =
-        await _songsToMediaItems(_currentPlaylist, fast: useFast);
+    final loadInBackground = !_shuffle && _currentPlaylist.length > 100;
+    if (loadInBackground) {
+      final selected = _currentPlaylist[_currentIndex];
+      final remaining = <SongModel>[
+        ..._currentPlaylist.sublist(_currentIndex + 1),
+        ..._currentPlaylist.sublist(0, _currentIndex),
+      ];
+      _currentPlaylist = [selected, ...remaining];
+      _currentIndex = 0;
+    }
+    final mediaItems = loadInBackground
+        ? await _songsToMediaItems([_currentPlaylist.first], fast: true)
+        : await _songsToMediaItems(_currentPlaylist, fast: useFast);
 
     try {
       await _syncPlayerLoopMode();
-      await _handler.loadPlaylist(mediaItems, _currentIndex);
+      await _handler.loadPlaylist(
+        mediaItems,
+        loadInBackground ? 0 : _currentIndex,
+      );
       _savePlaybackState();
       await _updateHomeWidget();
+      if (loadInBackground) {
+        unawaited(_appendRemainingQueueInBackground(
+          loadGeneration,
+          _currentPlaylist.skip(1).toList(growable: false),
+        ));
+      }
     } catch (e) {
       debugPrint("Error loading playlist: $e");
       if (_currentPlaylist.length > 1) {
@@ -1179,6 +1220,24 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     // principal para que aparezca la imagen en la pantalla de bloqueo.
     if (useFast && _currentSong != null) {
       unawaited(_updateCurrentSongArtwork(_currentSong!));
+    }
+  }
+
+  Future<void> _appendRemainingQueueInBackground(
+    int generation,
+    List<SongModel> songs,
+  ) async {
+    const batchSize = 150;
+    for (var offset = 0; offset < songs.length; offset += batchSize) {
+      if (generation != _queueLoadGeneration) return;
+      final end = (offset + batchSize).clamp(0, songs.length);
+      final batch = await _songsToMediaItems(
+        songs.sublist(offset, end),
+        fast: true,
+      );
+      if (generation != _queueLoadGeneration) return;
+      await _handler.addQueueItems(batch);
+      await Future<void>.delayed(Duration.zero);
     }
   }
 
@@ -1522,7 +1581,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     clearSelection();
   }
 
-
   /// Salta directamente a la canción en [index] dentro de la cola actual,
   /// sin reiniciar ni recargar la lista. Inicia la reproducción inmediatamente
   /// para evitar congelamiento de la interfaz al tocar un ítem de la cola.
@@ -1599,6 +1657,140 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         : _favoriteIds.add(song.id);
     notifyListeners();
     await StatePersistence.saveFavorites(_favoriteIds);
+  }
+
+  Future<void> createPlaylist(String name, List<SongModel> songs) async {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty || songs.isEmpty) return;
+    _savedPlaylists[trimmedName] = songs.map((song) => song.data).toList();
+    await StatePersistence.savePlaylists(_savedPlaylists);
+    notifyListeners();
+  }
+
+  Future<void> addSongToPlaylist(String name, SongModel song) async {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) return;
+    final paths = List<String>.from(_savedPlaylists[trimmedName] ?? []);
+    if (!paths.contains(song.data)) {
+      paths.add(song.data);
+    }
+    _savedPlaylists[trimmedName] = paths;
+    await StatePersistence.savePlaylists(_savedPlaylists);
+    notifyListeners();
+  }
+
+  Future<void> deletePlaylist(String name) async {
+    _savedPlaylists.remove(name);
+    await StatePersistence.savePlaylists(_savedPlaylists);
+    notifyListeners();
+  }
+
+  List<SongModel> songsForPlaylist(String name) {
+    final songMap = {for (final song in _allSongs) song.data: song};
+    return (_savedPlaylists[name] ?? [])
+        .map((songPath) => songMap[songPath])
+        .whereType<SongModel>()
+        .toList();
+  }
+
+  Future<String?> exportM3u8(
+    String name,
+    List<SongModel> songs,
+  ) async {
+    if (songs.isEmpty) return null;
+    final musicDirectory = Directory('/storage/emulated/0/Music');
+    final directory = musicDirectory;
+    if (!directory.existsSync()) {
+      try {
+        await directory.create(recursive: true);
+      } catch (_) {
+        return _exportM3u8ToAppDocuments(name, songs);
+      }
+    }
+    return _writeM3u8(directory, name, songs);
+  }
+
+  Future<String> _exportM3u8ToAppDocuments(
+      String name, List<SongModel> songs) async {
+    final directory = await getApplicationDocumentsDirectory();
+    return _writeM3u8(directory, name, songs);
+  }
+
+  Future<String> _writeM3u8(
+      Directory directory, String name, List<SongModel> songs) async {
+    final safeName = name.trim().replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final file = File('${directory.path}/$safeName.m3u8');
+    final lines = <String>['#EXTM3U'];
+    for (final song in songs) {
+      final title = song.title.trim().isEmpty ? song.displayName : song.title;
+      final artist = song.artist == null || song.artist == '<unknown>'
+          ? 'Artista Desconocido'
+          : song.artist!;
+      lines
+        ..add(
+            '#EXTINF:-1,${title.replaceAll('\n', ' ')} - ${artist.replaceAll('\n', ' ')}')
+        ..add(song.data);
+    }
+    await file.writeAsString('${lines.join('\n')}\n', flush: true);
+    return file.path;
+  }
+
+  Future<int> importM3u8(File file, String playlistName) async {
+    if (!await file.exists()) return 0;
+    final lines = await file.readAsLines();
+    final byPath = {for (final song in _allSongs) song.data: song};
+    final byKey = {
+      for (final song in _allSongs) _playlistSongKey(song): song,
+    };
+    final imported = <SongModel>[];
+    String? pendingInfo;
+    for (final line in lines) {
+      if (line.startsWith('#EXTINF:')) {
+        pendingInfo = line.substring(line.indexOf(',') + 1).trim();
+        continue;
+      }
+      if (line.isEmpty || line.startsWith('#')) continue;
+      final song = byPath[line] ?? _songFromM3uInfo(pendingInfo, byKey);
+      if (song != null && !imported.any((item) => item.data == song.data)) {
+        imported.add(song);
+      }
+      pendingInfo = null;
+    }
+    if (imported.isEmpty) return 0;
+    await createPlaylist(playlistName, imported);
+    return imported.length;
+  }
+
+  String _playlistSongKey(SongModel song) {
+    final title = song.title.trim().isEmpty ? song.displayName : song.title;
+    final artist = song.artist == null || song.artist == '<unknown>'
+        ? 'Artista Desconocido'
+        : song.artist!;
+    return '${title.trim()} - ${artist.trim()}'.toLowerCase();
+  }
+
+  SongModel? _songFromM3uInfo(String? info, Map<String, SongModel> songsByKey) {
+    if (info == null || info.isEmpty) return null;
+    return songsByKey[info.toLowerCase()];
+  }
+
+  Future<String?> exportFavoritesM3u8() {
+    final songs =
+        _allSongs.where((song) => _favoriteIds.contains(song.id)).toList();
+    return exportM3u8('Favoritos', songs);
+  }
+
+  Future<void> setRecentSongsLimit(int limit) async {
+    _recentSongsLimit = limit.clamp(100, 10000);
+    await StatePersistence.saveRecentSongsLimit(_recentSongsLimit);
+    notifyListeners();
+  }
+
+  Future<void> setActiveTab(String tabId) async {
+    if (_activeTabId == tabId) return;
+    _activeTabId = tabId;
+    await StatePersistence.saveActiveTab(tabId);
+    notifyListeners();
   }
 
   Future<void> updateSongMetadata(
@@ -1750,6 +1942,24 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<List<MediaItem>> _songsToMediaItems(List<SongModel> songs,
       {bool fast = false}) {
+    if (fast) {
+      return _fallbackArtworkUri().then(
+        (artUri) => songs
+            .map(
+              (song) => MediaItem(
+                id: song.data,
+                album: song.album ?? 'Desconocido',
+                title: TitleUtils.getDisplayTitle(song),
+                artist: (song.artist == null || song.artist == "<unknown>")
+                    ? "Artista Desconocido"
+                    : song.artist,
+                artUri: artUri,
+                duration: Duration(milliseconds: song.duration ?? 0),
+              ),
+            )
+            .toList(growable: false),
+      );
+    }
     return Future.wait(songs.map((s) => _songToMediaItem(s, fast: fast)));
   }
 
@@ -1893,39 +2103,37 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     if (_allSongs.isEmpty) {
-      debugPrint('[Persistence] _allSongs está vacío, no se puede restaurar canción');
+      debugPrint(
+          '[Persistence] _allSongs está vacío, no se puede restaurar canción');
       return;
     }
 
     List<SongModel> targetQueue = [];
 
-    // 1. Intentar reconstruir targetQueue desde las playlistPaths guardadas
-    if (playlistPaths.isNotEmpty) {
-      final songMap = {for (var s in _allSongs) s.data: s};
-      final reconstructed = playlistPaths
-          .map((p) => songMap[p])
-          .whereType<SongModel>()
+    // La carpeta activa tiene prioridad sobre playlistPaths: de lo contrario,
+    // una cola global guardada podría volver a incluir todas las subcarpetas.
+    if (mode == PlaybackMode.folder && folderPath != null) {
+      final normFolder = _normalizeFolderPath(folderPath);
+      targetQueue = _allSongs
+          .where((s) => _normalizeFolderPath(_getParentPath(s)) == normFolder)
           .toList();
+      _playbackMode = PlaybackMode.folder;
+      _activeFolderPath = normFolder;
+      _folderQueue = List.from(targetQueue);
+    } else if (playlistPaths.isNotEmpty) {
+      final songMap = {for (var s in _allSongs) s.data: s};
+      final reconstructed =
+          playlistPaths.map((p) => songMap[p]).whereType<SongModel>().toList();
       if (reconstructed.isNotEmpty) {
         targetQueue = reconstructed;
       }
     }
 
-    // 2. Si no hay playlistPaths guardadas o falló, usar modo carpeta o global
+    // Si no se pudo restaurar la carpeta o la playlist, usar la cola global.
     if (targetQueue.isEmpty) {
-      if (mode == PlaybackMode.folder && folderPath != null) {
-        final normFolder = _normalizeFolderPath(folderPath);
-        targetQueue = _allSongs
-            .where((s) => _normalizeFolderPath(_getParentPath(s)) == normFolder)
-            .toList();
-        _playbackMode = PlaybackMode.folder;
-        _activeFolderPath = folderPath;
-        _folderQueue = List.from(targetQueue);
-      } else {
-        targetQueue = _globalQueue.isNotEmpty ? _globalQueue : _allSongs;
-        _playbackMode = PlaybackMode.global;
-        _folderQueue = [];
-      }
+      targetQueue = _globalQueue.isNotEmpty ? _globalQueue : _allSongs;
+      _playbackMode = PlaybackMode.global;
+      _folderQueue = [];
     }
 
     if (targetQueue.isEmpty) {
@@ -1960,8 +2168,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       _currentSong = _currentPlaylist[_currentIndex];
 
       await _syncPlayerLoopMode();
-      final mediaItems =
-          await _songsToMediaItems(_currentPlaylist, fast: true);
+      final mediaItems = await _songsToMediaItems(_currentPlaylist, fast: true);
       // Cargar en estado PAUSADO con seek a la posición guardada
       await _handler.loadPlaylist(
         mediaItems,

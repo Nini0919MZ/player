@@ -203,6 +203,55 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
     }
   }
 
+  Future<void> _saveSongToPlaylist(
+      BuildContext context, AudioProvider audioProvider, SongModel song) async {
+    final playlists = audioProvider.savedPlaylists.keys.toList();
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          title: const Text('Guardar en playlist'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (playlists.isNotEmpty)
+                ...playlists.map(
+                  (name) => ListTile(
+                    leading: const Icon(Icons.queue_music),
+                    title: Text(name),
+                    onTap: () => Navigator.pop(dialogContext, name),
+                  ),
+                ),
+              const Divider(),
+              TextField(
+                controller: controller,
+                autofocus: playlists.isEmpty,
+                decoration: const InputDecoration(labelText: 'Nueva playlist'),
+                onSubmitted: (value) =>
+                    Navigator.pop(dialogContext, value.trim()),
+              ),
+              TextButton(
+                onPressed: () =>
+                    Navigator.pop(dialogContext, controller.text.trim()),
+                child: const Text('Crear y guardar'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (!context.mounted || selected == null || selected.trim().isEmpty) {
+      return;
+    }
+    await audioProvider.addSongToPlaylist(selected, song);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Guardada en "${selected.trim()}"')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
@@ -304,6 +353,10 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                 await _toggleEpicentro(audioProvider);
                 return;
               }
+              if (value == 'guardar_playlist' && context.mounted) {
+                await _saveSongToPlaylist(context, audioProvider, song);
+                return;
+              }
               if (value == 'eliminar' && context.mounted) {
                 showDeleteDialog(context, audioProvider, song);
                 return;
@@ -364,6 +417,17 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                       _epicentro ? 'Epicentro: ON' : 'Epicentro: OFF',
                       style: const TextStyle(color: Colors.white),
                     ),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'guardar_playlist',
+                child: Row(
+                  children: [
+                    Icon(Icons.playlist_add, size: 20, color: Colors.white),
+                    SizedBox(width: 10),
+                    Text('Guardar en playlist',
+                        style: TextStyle(color: Colors.white)),
                   ],
                 ),
               ),

@@ -19,6 +19,8 @@ class _SongsTabState extends State<SongsTab> {
   final ScrollController _scrollController = ScrollController();
   final List<String> _alphabet = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
   String? _draggedLetter;
+  List<SongModel>? _sortedSongs;
+  List<SongModel>? _songsSource;
 
   @override
   void dispose() {
@@ -89,10 +91,15 @@ class _SongsTabState extends State<SongsTab> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    final songs = List<SongModel>.from(audioProvider.allSongs)
-      ..sort((a, b) => TitleUtils.getDisplayTitle(a)
-          .toLowerCase()
-          .compareTo(TitleUtils.getDisplayTitle(b).toLowerCase()));
+    final sourceSongs = audioProvider.allSongs;
+    if (!identical(_songsSource, sourceSongs)) {
+      _songsSource = sourceSongs;
+      _sortedSongs = List<SongModel>.from(sourceSongs)
+        ..sort((a, b) => TitleUtils.getDisplayTitle(a)
+            .toLowerCase()
+            .compareTo(TitleUtils.getDisplayTitle(b).toLowerCase()));
+    }
+    final songs = _sortedSongs!;
 
     if (songs.isEmpty) {
       return const Center(child: Text("No se encontraron canciones"));
@@ -105,7 +112,8 @@ class _SongsTabState extends State<SongsTab> {
       children: [
         if (isSelectionMode)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             color: const Color(0xFF252525),
             child: Row(
               children: [
@@ -142,7 +150,8 @@ class _SongsTabState extends State<SongsTab> {
                   },
                 ),
                 IconButton(
-                  icon: const Icon(Icons.play_arrow, color: AppTheme.primaryColor),
+                  icon: const Icon(Icons.play_arrow,
+                      color: AppTheme.primaryColor),
                   tooltip: 'Reproducir selección',
                   onPressed: selectedCount > 0
                       ? () => audioProvider.playSelected(songs)
@@ -219,8 +228,7 @@ class _SongsTabState extends State<SongsTab> {
                             audioProvider.toggleSongSelection(song.id),
                         onCheckChanged: () =>
                             audioProvider.toggleSongSelection(song.id),
-                        onTap: () =>
-                            audioProvider.toggleSongSelection(song.id),
+                        onTap: () => audioProvider.toggleSongSelection(song.id),
                       );
                     }
 
@@ -248,77 +256,84 @@ class _SongsTabState extends State<SongsTab> {
                         onLongPress: () =>
                             audioProvider.toggleSongSelection(song.id),
                         onTap: () {
-                          audioProvider.playPlaylist(songs, index);
+                          final playlist = List<SongModel>.from(songs);
+                          audioProvider.playPlaylist(playlist, index);
                         },
                       ),
                     );
                   },
                 ),
 
+                // Alphabet Sidebar
+                Positioned(
+                  right: 0,
+                  top: 20,
+                  bottom: 20,
+                  width: 30,
+                  child: GestureDetector(
+                    onVerticalDragStart: (details) => _handleScroll(
+                        details.localPosition,
+                        constraints.maxHeight - 40,
+                        songs),
+                    onVerticalDragUpdate: (details) => _handleScroll(
+                        details.localPosition,
+                        constraints.maxHeight - 40,
+                        songs),
+                    onVerticalDragEnd: (_) =>
+                        setState(() => _draggedLetter = null),
+                    onTapDown: (details) => _handleScroll(details.localPosition,
+                        constraints.maxHeight - 40, songs),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black26,
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: _alphabet.map((letter) {
+                          bool isDragging = _draggedLetter == letter;
+                          return Text(
+                            letter,
+                            style: TextStyle(
+                                color: isDragging
+                                    ? AppTheme.primaryColor
+                                    : Colors.white60,
+                                fontSize: isDragging ? 13 : 9,
+                                fontWeight: isDragging
+                                    ? FontWeight.bold
+                                    : FontWeight.normal),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                ),
 
-          // Alphabet Sidebar
-          Positioned(
-            right: 0,
-            top: 20,
-            bottom: 20,
-            width: 30,
-            child: GestureDetector(
-              onVerticalDragStart: (details) => _handleScroll(
-                  details.localPosition, constraints.maxHeight - 40, songs),
-              onVerticalDragUpdate: (details) => _handleScroll(
-                  details.localPosition, constraints.maxHeight - 40, songs),
-              onVerticalDragEnd: (_) => setState(() => _draggedLetter = null),
-              onTapDown: (details) => _handleScroll(
-                  details.localPosition, constraints.maxHeight - 40, songs),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.black26,
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: _alphabet.map((letter) {
-                    bool isDragging = _draggedLetter == letter;
-                    return Text(
-                      letter,
-                      style: TextStyle(
-                          color: isDragging
-                              ? AppTheme.primaryColor
-                              : Colors.white60,
-                          fontSize: isDragging ? 13 : 9,
-                          fontWeight:
-                              isDragging ? FontWeight.bold : FontWeight.normal),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ),
-          ),
-
-          // Letter Overlay Indicator
-          if (_draggedLetter != null)
-            Center(
-              child: Container(
-                height: 100,
-                width: 100,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Colors.black87,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppTheme.primaryColor, width: 2),
-                ),
-                child: Text(
-                  _draggedLetter!,
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 40,
-                      fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-        ],
-      );
-    }),
+                // Letter Overlay Indicator
+                if (_draggedLetter != null)
+                  Center(
+                    child: Container(
+                      height: 100,
+                      width: 100,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.black87,
+                        shape: BoxShape.circle,
+                        border:
+                            Border.all(color: AppTheme.primaryColor, width: 2),
+                      ),
+                      child: Text(
+                        _draggedLetter!,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 40,
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          }),
         ),
       ],
     );

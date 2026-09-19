@@ -83,6 +83,11 @@ class HomeScreen extends StatelessWidget {
         return DefaultTabController(
           key: ValueKey(audioProvider.enabledTabs.join('-')),
           length: tabCount,
+          initialIndex: activeDefs.isEmpty
+              ? 0
+              : activeDefs
+                  .indexWhere((tab) => tab.id == audioProvider.activeTabId)
+                  .clamp(0, activeDefs.length - 1),
           child: Scaffold(
             appBar: AppBar(
               title: const Text("Player",
@@ -106,8 +111,7 @@ class HomeScreen extends StatelessWidget {
                           ? const SizedBox(
                               width: 20,
                               height: 20,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.more_vert),
                       onSelected: (value) async {
@@ -127,7 +131,8 @@ class HomeScreen extends StatelessWidget {
                           } else {
                             final lines = <String>[];
                             if (result.toInsert.isNotEmpty)
-                              lines.add('+ ${result.toInsert.length} agregadas');
+                              lines
+                                  .add('+ ${result.toInsert.length} agregadas');
                             if (result.toUpdate.isNotEmpty)
                               lines.add(
                                   '~ ${result.toUpdate.length} modificadas');
@@ -156,8 +161,7 @@ class HomeScreen extends StatelessWidget {
                         PopupMenuItem<String>(
                           value: 'refresh_library',
                           enabled: !state.isIndexing && !state.isSyncing,
-                          child:
-                              const Text('Refrescar carpetas/elementos'),
+                          child: const Text('Refrescar carpetas/elementos'),
                         ),
                         const PopupMenuItem<String>(
                           value: 'settings',
@@ -185,6 +189,11 @@ class HomeScreen extends StatelessWidget {
 
                     return TabBar(
                       isScrollable: defs.length > 4,
+                      onTap: (index) {
+                        if (index >= 0 && index < defs.length) {
+                          audioProvider.setActiveTab(defs[index].id);
+                        }
+                      },
                       tabs: defs
                           .map((d) => Tab(text: d.label(audioProvider)))
                           .toList(),
@@ -197,11 +206,9 @@ class HomeScreen extends StatelessWidget {
               children: [
                 Consumer<AudioProvider>(
                   builder: (context, audioProvider, _) {
-                    if (audioProvider.isLoading)
-                      return const SizedBox.shrink();
+                    if (audioProvider.isLoading) return const SizedBox.shrink();
                     if (audioProvider.isIndexing) {
-                      return _InlineIndexingBar(
-                          audioProvider: audioProvider);
+                      return _InlineIndexingBar(audioProvider: audioProvider);
                     }
                     if (audioProvider.isSyncing) {
                       return const _SyncingBanner();
@@ -240,8 +247,7 @@ class HomeScreen extends StatelessWidget {
                           if (defs.isEmpty) {
                             return const Center(
                                 child: Text('Sin pestañas activas',
-                                    style:
-                                        TextStyle(color: Colors.white54)));
+                                    style: TextStyle(color: Colors.white54)));
                           }
 
                           return TabBarView(

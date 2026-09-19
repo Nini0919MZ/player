@@ -17,6 +17,7 @@ class FoldersTab extends StatefulWidget {
 }
 
 class _FoldersTabState extends State<FoldersTab> {
+  static bool _restoredFolderForSession = false;
   final ScrollController _scrollController = ScrollController();
   final List<String> _alphabet = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
   String? _draggedLetter;
@@ -32,15 +33,24 @@ class _FoldersTabState extends State<FoldersTab> {
   }
 
   Future<void> _restoreLastFolder() async {
-    if (_restoredNavigation) return;
+    if (_restoredNavigation || _restoredFolderForSession) return;
     _restoredNavigation = true;
 
     final lastPath = await StatePersistence.loadLastBrowsedFolder();
-    if (lastPath == null || lastPath.isEmpty) return;
+    if (lastPath == null || lastPath.isEmpty) {
+      _restoredFolderForSession = true;
+      return;
+    }
     if (!mounted) return;
 
     final audioProvider = context.read<AudioProvider>();
     final allSongs = audioProvider.allSongs;
+    if (allSongs.isEmpty) {
+      _restoredNavigation = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _restoreLastFolder());
+      return;
+    }
+    _restoredFolderForSession = true;
 
     // Find songs in the saved folder
     final folderSongs = allSongs.where((song) {
@@ -60,10 +70,7 @@ class _FoldersTabState extends State<FoldersTab> {
           folderPath: lastPath,
         ),
       ),
-    ).then((_) {
-      // Clear the saved path when the user pops back to root.
-      StatePersistence.saveLastBrowsedFolder(null);
-    });
+    );
   }
 
   @override
@@ -113,11 +120,14 @@ class _FoldersTabState extends State<FoldersTab> {
     }
   }
 
-  void _handleScroll(Offset localPosition, double sidebarHeight, List<String> folderPaths) {
+  void _handleScroll(
+      Offset localPosition, double sidebarHeight, List<String> folderPaths) {
     final double y = localPosition.dy;
-    final int letterIndex = ((y / sidebarHeight) * _alphabet.length).floor().clamp(0, _alphabet.length - 1);
+    final int letterIndex = ((y / sidebarHeight) * _alphabet.length)
+        .floor()
+        .clamp(0, _alphabet.length - 1);
     final String letter = _alphabet[letterIndex];
-    
+
     if (_draggedLetter != letter) {
       setState(() => _draggedLetter = letter);
       _scrollToLetter(letter, folderPaths);
@@ -134,107 +144,120 @@ class _FoldersTabState extends State<FoldersTab> {
       children: [
         CountBanner(count: folderPaths.length, label: 'Carpetas'),
         Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return Stack(
-                children: [
-            ListView.builder(
-              controller: _scrollController,
-              itemCount: folderPaths.length,
-              itemExtent: _itemHeight,
-              itemBuilder: (context, index) {
-                final folderPath = folderPaths[index];
-                final folderName = folderPath.split('/').last;
-                final folderSongs = allSongs
-                    .where((song) => song.data.startsWith(folderPath + '/') || song.data.startsWith(folderPath + '\\'))
-                    .where((song) {
+          child: LayoutBuilder(builder: (context, constraints) {
+            return Stack(
+              children: [
+                ListView.builder(
+                  controller: _scrollController,
+                  itemCount: folderPaths.length,
+                  itemExtent: _itemHeight,
+                  itemBuilder: (context, index) {
+                    final folderPath = folderPaths[index];
+                    final folderName = folderPath.split('/').last;
+                    final folderSongs = allSongs
+                        .where((song) =>
+                            song.data.startsWith(folderPath + '/') ||
+                            song.data.startsWith(folderPath + '\\'))
+                        .where((song) {
                       final songDir = path.dirname(song.data);
                       return songDir == folderPath;
-                    })
-                    .toList();
-                
-                if (folderSongs.isEmpty) return const SizedBox.shrink();
+                    }).toList();
 
-                return FolderListTile(
-                  folderName: folderName,
-                  songs: folderSongs,
-                  onTap: () {
-                    // Persist the folder path so the app reopens here next time.
-                    StatePersistence.saveLastBrowsedFolder(folderPath);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => FolderDetailScreen(
-                          folderName: folderName,
-                          songs: folderSongs,
-                          folderPath: folderPath,
-                        ),
-                      ),
-                    ).then((_) {
-                      // Clear the saved path when the user pops back to root.
-                      StatePersistence.saveLastBrowsedFolder(null);
-                    });
+                    if (folderSongs.isEmpty) return const SizedBox.shrink();
+
+                    return FolderListTile(
+                      folderName: folderName,
+                      songs: folderSongs,
+                      onTap: () {
+                        // Persist the folder path so the app reopens here next time.
+                        StatePersistence.saveLastBrowsedFolder(folderPath);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => FolderDetailScreen(
+                              folderName: folderName,
+                              songs: folderSongs,
+                              folderPath: folderPath,
+                            ),
+                          ),
+                        );
+                      },
+                    );
                   },
-                );
-              },
-            ),
+                ),
 
-            // Alphabet Sidebar
-            Positioned(
-              right: 0,
-              top: 20,
-              bottom: 20,
-              width: 30,
-              child: GestureDetector(
-                onVerticalDragStart: (details) => _handleScroll(details.localPosition, constraints.maxHeight - 40, folderPaths),
-                onVerticalDragUpdate: (details) => _handleScroll(details.localPosition, constraints.maxHeight - 40, folderPaths),
-                onVerticalDragEnd: (_) => setState(() => _draggedLetter = null),
-                onTapDown: (details) => _handleScroll(details.localPosition, constraints.maxHeight - 40, folderPaths),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black26,
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: _alphabet.map((letter) {
-                      bool isDragging = _draggedLetter == letter;
-                      return Text(
-                        letter,
-                        style: TextStyle(
-                          color: isDragging ? AppTheme.primaryColor : Colors.white60, 
-                          fontSize: isDragging ? 13 : 9, 
-                          fontWeight: isDragging ? FontWeight.bold : FontWeight.normal
-                        ),
-                      );
-                    }).toList(),
+                // Alphabet Sidebar
+                Positioned(
+                  right: 0,
+                  top: 20,
+                  bottom: 20,
+                  width: 30,
+                  child: GestureDetector(
+                    onVerticalDragStart: (details) => _handleScroll(
+                        details.localPosition,
+                        constraints.maxHeight - 40,
+                        folderPaths),
+                    onVerticalDragUpdate: (details) => _handleScroll(
+                        details.localPosition,
+                        constraints.maxHeight - 40,
+                        folderPaths),
+                    onVerticalDragEnd: (_) =>
+                        setState(() => _draggedLetter = null),
+                    onTapDown: (details) => _handleScroll(details.localPosition,
+                        constraints.maxHeight - 40, folderPaths),
+                    onTapUp: (_) => setState(() => _draggedLetter = null),
+                    onTapCancel: () => setState(() => _draggedLetter = null),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black26,
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: _alphabet.map((letter) {
+                          bool isDragging = _draggedLetter == letter;
+                          return Text(
+                            letter,
+                            style: TextStyle(
+                                color: isDragging
+                                    ? AppTheme.primaryColor
+                                    : Colors.white60,
+                                fontSize: isDragging ? 13 : 9,
+                                fontWeight: isDragging
+                                    ? FontWeight.bold
+                                    : FontWeight.normal),
+                          );
+                        }).toList(),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
 
-            // Letter Overlay Indicator
-            if (_draggedLetter != null)
-              Center(
-                child: Container(
-                  height: 100,
-                  width: 100,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: Colors.black87,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppTheme.primaryColor, width: 2),
+                // Letter Overlay Indicator
+                if (_draggedLetter != null)
+                  Center(
+                    child: Container(
+                      height: 100,
+                      width: 100,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.black87,
+                        shape: BoxShape.circle,
+                        border:
+                            Border.all(color: AppTheme.primaryColor, width: 2),
+                      ),
+                      child: Text(
+                        _draggedLetter!,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 40,
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
                   ),
-                  child: Text(
-                    _draggedLetter!,
-                    style: const TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-          ],
-        );
-      }
-    ),
+              ],
+            );
+          }),
         ),
       ],
     );
