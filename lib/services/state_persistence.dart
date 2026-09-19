@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum PlaybackMode { folder, global }
@@ -16,6 +17,7 @@ class StatePersistence {
   static const String _positionKey = 'position_ms';
   static const String _playlistKey = 'playback_playlist_paths_v1';
   static const String _favoritesKey = 'favorites';
+  static const String _playlistsKey = 'saved_playlists_v1';
   static const String _autoModeKey = 'auto_mode_enabled';
   static const String _legacyAutoModeKey = 'modo_auto';
   static const String _epicenterEnabledKey = 'epicenter_enabled';
@@ -143,13 +145,44 @@ class StatePersistence {
         _favoritesKey, favorites.map((id) => id.toString()).toList());
   }
 
+  static Future<Map<String, List<String>>> loadPlaylists() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_playlistsKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return {};
+      return decoded.map<String, List<String>>((key, value) {
+        final paths =
+            value is List ? value.whereType<String>().toList() : <String>[];
+        return MapEntry(key.toString(), paths);
+      });
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> savePlaylists(Map<String, List<String>> playlists) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_playlistsKey, jsonEncode(playlists));
+  }
+
   // Enabled tabs persistence (ordered list of tab IDs)
   static const String _enabledTabsKey = 'enabled_tabs_v2';
+  static const String _activeTabKey = 'active_tab_id';
   static const List<String> defaultEnabledTabs = [
-    'folders', 'songs', 'favorites',
+    'folders',
+    'songs',
+    'favorites',
   ];
   static const List<String> allAvailableTabs = [
-    'folders', 'songs', 'favorites', 'albums', 'artists', 'playlists', 'recently_added',
+    'folders',
+    'songs',
+    'favorites',
+    'albums',
+    'artists',
+    'playlists',
+    'recently_added',
   ];
 
   static Future<List<String>> loadEnabledTabs() async {
@@ -165,9 +198,20 @@ class StatePersistence {
     await prefs.setStringList(_enabledTabsKey, tabs);
   }
 
+  static Future<void> saveActiveTab(String tabId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_activeTabKey, tabId);
+  }
+
+  static Future<String?> loadActiveTab() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_activeTabKey);
+  }
+
   // Navigation folder persistence: remembers the last subfolder the user
   // was browsing so the app reopens directly inside it instead of the root.
   static const String _lastBrowsedFolderKey = 'last_browsed_folder_path';
+  static const String _recentSongsLimitKey = 'recent_songs_limit';
 
   static Future<void> saveLastBrowsedFolder(String? path) async {
     final prefs = await SharedPreferences.getInstance();
@@ -181,6 +225,16 @@ class StatePersistence {
   static Future<String?> loadLastBrowsedFolder() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_lastBrowsedFolderKey);
+  }
+
+  static Future<void> saveRecentSongsLimit(int limit) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_recentSongsLimitKey, limit.clamp(100, 10000));
+  }
+
+  static Future<int> loadRecentSongsLimit() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getInt(_recentSongsLimitKey) ?? 100).clamp(100, 10000);
   }
 
   // Legacy: kept for migration if needed

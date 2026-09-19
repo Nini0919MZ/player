@@ -4,7 +4,6 @@ import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/audio_provider.dart';
-import '../../services/state_persistence.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/folder_info_modal.dart';
 import '../../widgets/mini_player.dart';
@@ -15,6 +14,7 @@ import 'search_screen.dart';
 class FolderDetailScreen extends StatelessWidget {
   final String folderName;
   final List<SongModel> songs;
+
   /// Ruta exacta de la carpeta. Se usa para persistencia de navegación.
   final String? folderPath;
 
@@ -27,8 +27,9 @@ class FolderDetailScreen extends StatelessWidget {
 
   String _formatTotalDuration(List<SongModel> folderSongs) {
     if (folderSongs.isEmpty) return "0:00";
-    
-    int totalMs = folderSongs.fold(0, (sum, song) => sum + (song.duration ?? 0));
+
+    int totalMs =
+        folderSongs.fold(0, (sum, song) => sum + (song.duration ?? 0));
     final duration = Duration(milliseconds: totalMs);
     final hours = duration.inHours;
     final minutes = (duration.inMinutes % 60).toString().padLeft(2, '0');
@@ -43,7 +44,7 @@ class FolderDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
-    
+
     // Filter the songs to ensure they still exist in the provider's list
     final currentFolderSongs = audioProvider.allSongs
         .where((s) => songs.any((original) => original.id == s.id))
@@ -58,159 +59,190 @@ class FolderDetailScreen extends StatelessWidget {
     }
 
     // Get the first available album art from the folder
-    final firstSongWithArt = currentFolderSongs.firstWhere((song) => song.albumId != null, orElse: () => currentFolderSongs.isNotEmpty ? currentFolderSongs.first : songs.first);
-    final String resolvedFolderPath = folderPath ?? (currentFolderSongs.isNotEmpty ? currentFolderSongs.first.data.replaceAll(currentFolderSongs.first.displayName, "") : "Directorio desconocido");
+    final firstSongWithArt = currentFolderSongs.firstWhere(
+        (song) => song.albumId != null,
+        orElse: () => currentFolderSongs.isNotEmpty
+            ? currentFolderSongs.first
+            : songs.first);
+    final String resolvedFolderPath = folderPath ??
+        (currentFolderSongs.isNotEmpty
+            ? currentFolderSongs.first.data
+                .replaceAll(currentFolderSongs.first.displayName, "")
+            : "Directorio desconocido");
 
     return PopScope(
-      // Al salir (back gesture, botón atrás, etc.) limpiamos la carpeta
-      // guardada para que la próxima sesión arranque desde la raíz.
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) {
-          StatePersistence.saveLastBrowsedFolder(null);
-        }
-      },
       child: Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.pop(context),
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.search),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SearchScreen()),
+                );
+              },
+            ),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert),
+              color: AppTheme.surfaceColor,
+              onSelected: (value) {
+                if (value == 'reproducir') {
+                  audioProvider.playPlaylist(currentFolderSongs, 0);
+                } else if (value == 'reproducir_shuffle') {
+                  audioProvider.playPlaylistShuffled(currentFolderSongs);
+                } else if (value == 'info') {
+                  showFolderInfo(context, folderName, resolvedFolderPath,
+                      currentFolderSongs);
+                } else if (value == 'añadir') {
+                  audioProvider.addAllToQueue(currentFolderSongs);
+                } else if (value == 'delete') {
+                  _showDeleteConfirmation(context, audioProvider, folderName,
+                      resolvedFolderPath, currentFolderSongs);
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                    value: 'reproducir',
+                    child: Text('Reproducir',
+                        style: TextStyle(color: Colors.white))),
+                const PopupMenuItem(
+                    value: 'reproducir_shuffle',
+                    child: Text('Reproducir aleatorio',
+                        style: TextStyle(color: Colors.white))),
+                const PopupMenuItem(
+                    value: 'info',
+                    child: Text('Información de la carpeta',
+                        style: TextStyle(color: Colors.white))),
+                const PopupMenuItem(
+                    value: 'añadir',
+                    child: Text('Añadir a lista',
+                        style: TextStyle(color: Colors.white))),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                    value: 'delete',
+                    child: Text('Borrar carpeta',
+                        style: TextStyle(color: Colors.red))),
+              ],
+            ),
+          ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SearchScreen()),
-              );
-            },
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
-            color: AppTheme.surfaceColor,
-            onSelected: (value) {
-              if (value == 'reproducir') {
-                audioProvider.playPlaylist(currentFolderSongs, 0);
-              } else if (value == 'reproducir_shuffle') {
-                audioProvider.playPlaylistShuffled(currentFolderSongs);
-              } else if (value == 'info') {
-                showFolderInfo(context, folderName, resolvedFolderPath, currentFolderSongs);
-              } else if (value == 'añadir') {
-                audioProvider.addAllToQueue(currentFolderSongs);
-              } else if (value == 'delete') {
-                _showDeleteConfirmation(context, audioProvider, folderName, resolvedFolderPath, currentFolderSongs);
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'reproducir', child: Text('Reproducir', style: TextStyle(color: Colors.white))),
-              const PopupMenuItem(value: 'reproducir_shuffle', child: Text('Reproducir aleatorio', style: TextStyle(color: Colors.white))),
-              const PopupMenuItem(value: 'info', child: Text('Información de la carpeta', style: TextStyle(color: Colors.white))),
-              const PopupMenuItem(value: 'añadir', child: Text('Añadir a lista', style: TextStyle(color: Colors.white))),
-              const PopupMenuDivider(),
-              const PopupMenuItem(value: 'delete', child: Text('Borrar carpeta', style: TextStyle(color: Colors.red))),
-            ],
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: Scrollbar(
-              thumbVisibility: true,
-              interactive: true,
-              radius: const Radius.circular(8),
-              thickness: 6,
-              child: CustomScrollView(
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8.0),
-                            child: SmartArtwork(
-                              albumId: firstSongWithArt.albumId ?? 0,
-                              songPath: firstSongWithArt.data,
-                              type: ArtworkType.AUDIO,
-                              size: 120,
-                              borderRadius: BorderRadius.circular(8),
+        body: Column(
+          children: [
+            Expanded(
+              child: Scrollbar(
+                thumbVisibility: true,
+                interactive: true,
+                radius: const Radius.circular(8),
+                thickness: 6,
+                child: CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16.0, vertical: 8.0),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8.0),
+                              child: SmartArtwork(
+                                albumId: firstSongWithArt.albumId ?? 0,
+                                songPath: firstSongWithArt.data,
+                                type: ArtworkType.AUDIO,
+                                size: 120,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  folderName,
-                                  style: const TextStyle(
-                                    color: AppTheme.textMain,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    folderName,
+                                    style: const TextStyle(
+                                      color: AppTheme.textMain,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  resolvedFolderPath,
-                                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  "${songs.length} Canciones • ${_formatTotalDuration(songs)}",
-                                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-                                ),
-                              ],
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    resolvedFolderPath,
+                                    style: const TextStyle(
+                                        color: AppTheme.textSecondary,
+                                        fontSize: 13),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    "${songs.length} Canciones • ${_formatTotalDuration(songs)}",
+                                    style: const TextStyle(
+                                        color: AppTheme.textSecondary,
+                                        fontSize: 13),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
 
-                  // Action Buttons removed per request to enforce strict folder-only context
+                    // Action Buttons removed per request to enforce strict folder-only context
 
-                  // Song List
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final song = currentFolderSongs[index];
-                        final isSelected = audioProvider.currentSong?.id == song.id;
+                    // Song List
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final song = currentFolderSongs[index];
+                          final isSelected =
+                              audioProvider.currentSong?.id == song.id;
 
-                        return SongListTile(
-                          song: song,
-                          isSelected: isSelected,
-                          showTrailing: false,
-                          onTap: () {
-                            audioProvider.playFolderSongs(resolvedFolderPath, currentFolderSongs, index);
-                          },
-                        );
-                      },
-                      childCount: currentFolderSongs.length,
+                          return SongListTile(
+                            song: song,
+                            isSelected: isSelected,
+                            showTrailing: false,
+                            onTap: () {
+                              audioProvider.playFolderSongs(resolvedFolderPath,
+                                  currentFolderSongs, index);
+                            },
+                          );
+                        },
+                        childCount: currentFolderSongs.length,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-          if (audioProvider.currentPlaylist.isNotEmpty) const MiniPlayer(),
-        ],
-      ),
+            if (audioProvider.currentPlaylist.isNotEmpty) const MiniPlayer(),
+          ],
+        ),
       ), // closes PopScope
     );
   }
 
-  void _showDeleteConfirmation(BuildContext context, AudioProvider audioProvider, String name, String path, List<SongModel> songs) {
+  void _showDeleteConfirmation(
+      BuildContext context,
+      AudioProvider audioProvider,
+      String name,
+      String path,
+      List<SongModel> songs) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.surfaceColor,
-        title: const Text('Eliminar carpeta', style: TextStyle(color: Colors.white)),
+        title: const Text('Eliminar carpeta',
+            style: TextStyle(color: Colors.white)),
         content: Text(
           '¿Estás seguro de que quieres borrar la carpeta "$name"? Se eliminarán de forma irreversible TODOS los archivos físicos dentro de ella.',
           style: const TextStyle(color: AppTheme.textSecondary),
@@ -218,7 +250,8 @@ class FolderDetailScreen extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('CANCELAR', style: TextStyle(color: AppTheme.primaryColor)),
+            child: const Text('CANCELAR',
+                style: TextStyle(color: AppTheme.primaryColor)),
           ),
           TextButton(
             onPressed: () async {
@@ -230,12 +263,14 @@ class FolderDetailScreen extends StatelessWidget {
                 }
                 audioProvider.deleteFolder(path);
                 if (context.mounted) {
-                  Navigator.pop(context); // Close detail screen as it's being "deleted"
+                  Navigator.pop(
+                      context); // Close detail screen as it's being "deleted"
                 }
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text('Error al eliminar: $e', style: const TextStyle(color: Colors.white)),
+                    content: Text('Error al eliminar: $e',
+                        style: const TextStyle(color: Colors.white)),
                     backgroundColor: Colors.red,
                   ));
                 }

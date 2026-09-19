@@ -9,8 +9,11 @@ import com.arthenica.ffmpegkit.StreamInformation;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class MediaUtils {
+    private static final Map<String, Map<String, String>> WMA_METADATA_CACHE =
+            new ConcurrentHashMap<>();
 
     /**
      * Extrae metadata básica y técnica completa de un archivo de audio.
@@ -20,7 +23,6 @@ public class MediaUtils {
      */
     public static Map<String, String> getSongMetadata(String path) {
         HashMap<String, String> metadata = new HashMap<>();
-        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
         File file = new File(path);
         String format = getFileExtension(file);
 
@@ -40,9 +42,17 @@ public class MediaUtils {
         metadata.put("format", format);
 
         if ("WMA".equals(format)) {
-            return getWmaMetadata(path, file, metadata);
+            String cacheKey = path + ":" + file.length() + ":" + file.lastModified();
+            Map<String, String> cached = WMA_METADATA_CACHE.get(cacheKey);
+            if (cached != null) {
+                return new HashMap<>(cached);
+            }
+            Map<String, String> result = getWmaMetadata(path, file, metadata);
+            WMA_METADATA_CACHE.put(cacheKey, new HashMap<>(result));
+            return result;
         }
 
+        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
         try {
             retriever.setDataSource(path);
 
