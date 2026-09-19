@@ -635,51 +635,15 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                   future: LyricsService.load(song, audioProvider.lyricsSource),
                   builder: (context, snapshot) {
                     final result = snapshot.data;
+                    if (snapshot.connectionState == ConnectionState.waiting ||
+                        result?.hasTimestamps != true) {
+                      return const SizedBox.shrink();
+                    }
                     return Padding(
                       padding: const EdgeInsets.only(top: 8),
-                      child: InkWell(
-                        onTap: result == null
-                            ? null
-                            : () => _showLyrics(context, result.text),
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          width: double.infinity,
-                          constraints: const BoxConstraints(minHeight: 62),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.06),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: snapshot.connectionState ==
-                                  ConnectionState.waiting
-                              ? const Center(
-                                  child: SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  ),
-                                )
-                              : result?.hasTimestamps == true
-                                  ? _timestampedLyrics(
-                                      result!.lines,
-                                      audioProvider.player.positionStream,
-                                    )
-                                  : Text(
-                                      result?.text ??
-                                          'No se encontraron letras',
-                                      maxLines: 2,
-                                      overflow: TextOverflow.fade,
-                                      style: TextStyle(
-                                        color: result == null
-                                            ? Colors.white54
-                                            : Colors.white,
-                                        fontSize: 14,
-                                        height: 1.3,
-                                      ),
-                                    ),
-                        ),
+                      child: _timestampedLyrics(
+                        result!.lines,
+                        audioProvider.player.positionStream,
                       ),
                     );
                   },
@@ -903,29 +867,6 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
     );
   }
 
-  void _showLyrics(BuildContext context, String lyrics) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppTheme.surfaceColor,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-          child: SingleChildScrollView(
-            child: SelectableText(
-              lyrics,
-              style: const TextStyle(
-                color: AppTheme.textMain,
-                fontSize: 18,
-                height: 1.5,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _timestampedLyrics(
       List<LyricsLine> lines, Stream<Duration> positionStream) {
     return _SyncedLyricsView(
@@ -965,14 +906,7 @@ class _SyncedLyricsView extends StatefulWidget {
 }
 
 class _SyncedLyricsViewState extends State<_SyncedLyricsView> {
-  final ScrollController _scrollController = ScrollController();
   int _activeIndex = -1;
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
 
   int _lineAt(Duration position) {
     var activeIndex = -1;
@@ -993,17 +927,6 @@ class _SyncedLyricsViewState extends State<_SyncedLyricsView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || nextIndex == _activeIndex) return;
       setState(() => _activeIndex = nextIndex);
-      if (nextIndex >= 0) {
-        if (!_scrollController.hasClients || !mounted) return;
-        _scrollController.animateTo(
-          (nextIndex * 24.0).clamp(
-            0.0,
-            _scrollController.position.maxScrollExtent,
-          ),
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
-      }
     });
   }
 
@@ -1015,54 +938,28 @@ class _SyncedLyricsViewState extends State<_SyncedLyricsView> {
         stream: widget.positionStream,
         builder: (context, snapshot) {
           if (snapshot.hasData) _updateActiveLine(snapshot.data!);
-          return ListView.builder(
-            controller: _scrollController,
-            itemCount: widget.lines.length,
-            itemExtent: 24,
-            itemBuilder: (context, index) {
-              final line = widget.lines[index];
-              final isActive = index == _activeIndex;
-              return Row(
-                children: [
-                  SizedBox(
-                    width: 66,
-                    child: Text(
-                      _formatTimestamp(line.timestamp),
-                      style: TextStyle(
-                        color: isActive ? Colors.tealAccent : Colors.white54,
-                        fontSize: 12,
-                        fontWeight:
-                            isActive ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: Text(
-                      line.text,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: isActive ? Colors.white : Colors.white70,
-                        fontSize: isActive ? 15 : 14,
-                        fontWeight:
-                            isActive ? FontWeight.w600 : FontWeight.normal,
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
+          final activeLine =
+              _activeIndex >= 0 ? widget.lines[_activeIndex] : null;
+          return AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: SizedBox(
+              key: ValueKey(activeLine?.timestamp),
+              width: double.infinity,
+              child: Text(
+                activeLine?.text ?? '',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           );
         },
       ),
     );
-  }
-
-  String _formatTimestamp(Duration value) {
-    final minutes = value.inMinutes.toString().padLeft(2, '0');
-    final seconds = (value.inSeconds % 60).toString().padLeft(2, '0');
-    final hundredths =
-        (value.inMilliseconds % 1000 ~/ 10).toString().padLeft(2, '0');
-    return '$minutes:$seconds.$hundredths';
   }
 }
