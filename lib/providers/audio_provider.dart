@@ -25,6 +25,13 @@ import '../utils/title_utils.dart';
 
 enum AudioPreset { concertHall, chamber, cathedral, studio, plate }
 
+class _FolderMove {
+  final int offset;
+  final bool playLastTrack;
+
+  const _FolderMove(this.offset, {this.playLastTrack = false});
+}
+
 class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   final OnAudioQuery _audioQuery = OnAudioQuery();
   final MyAudioHandler _handler;
@@ -63,6 +70,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   List<SongModel> _allSongs = [];
   Map<String, int> _songIndexByPath = {};
   List<SongModel> _currentPlaylist = [];
+  List<SongModel> _unshuffledPlaylist = [];
   List<SongModel> _globalQueue = [];
   List<SongModel> _folderQueue = [];
   List<AlbumModel> _allAlbums = [];
@@ -95,6 +103,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   final Map<int, Uri> _systemArtworkUriCache = {};
   Uri? _fallbackArtworkFileUri;
   int _queueLoadGeneration = 0;
+  bool _navigationBusy = false;
+  final List<_FolderMove> _pendingFolderMoves = [];
+  bool _folderNavigationBusy = false;
 
   // Bug #9: Estado de selección múltiple
   final Set<int> _selectedSongIds = {};
@@ -1149,8 +1160,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       startIndex = 0;
     }
 
+    _unshuffledPlaylist = List<SongModel>.from(songs);
     final nextPlaylist = _shuffle && songs.length > 1
-        ? _buildSmartShuffleQueue(songs, startIndex)
+        ? _buildSmartShuffleQueue(_unshuffledPlaylist, startIndex)
         : List<SongModel>.from(songs);
     final nextIndex = _shuffle && songs.length > 1 ? 0 : startIndex;
     final canReuseCurrentQueue =
@@ -1184,7 +1196,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     // esperando la carátula de cada pista. Usamos el fallback placeholder para
     // arrancar el player de inmediato y luego actualizamos la canción actual.
     final useFast = _currentPlaylist.length > 20;
-    final loadInBackground = !_shuffle && _currentPlaylist.length > 100;
+    final loadInBackground = _playbackMode != PlaybackMode.folder &&
+        !_shuffle &&
+        _currentPlaylist.length > 100;
     if (loadInBackground) {
       final selected = _currentPlaylist[_currentIndex];
       final remaining = <SongModel>[
@@ -1281,34 +1295,58 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  Future<void> next() async {
+  Future<void> next() => _runNavigation(() async {
+        try {
+          if (_player.hasNext) {
+            await _handler.skipToNextDirect();
+            unawaited(_updateHomeWidget());
+          } else if (_playbackMode == PlaybackMode.folder) {
+            // Folder navigation is reserved for the dedicated folder controls.
+            // A manual next press must not leave the current folder.
+            final nextIndex = _currentIndex + 1;
+            if (nextIndex < _currentPlaylist.length) {
+              await skipToIndex(nextIndex);
+            }
+          }
+        } catch (e) {
+          debugPrint("Error skipping to next: $e");
+        }
+      });
+
+  Future<void> previous() => _runNavigation(() async {
+        try {
+          if (_player.hasPrevious) {
+            await _handler.skipToPreviousDirect();
+          }
+        } catch (e) {
+          debugPrint("Error skipping to previous: $e");
+        }
+      });
+
+  Future<void> previousSmart() => _runNavigation(() async {
+        final now = DateTime.now();
+        if (_lastTapTime != null &&
+            now.difference(_lastTapTime!) < const Duration(milliseconds: 700)) {
+          if (_player.hasPrevious) {
+            await _handler.skipToPreviousDirect();
+          } else if (_playbackMode == PlaybackMode.folder) {
+            await playPreviousFolder(playLastTrack: true);
+          }
+        } else {
+          await _player.seek(Duration.zero);
+        }
+        _lastTapTime = now;
+      });
+
+  Future<void> _runNavigation(Future<void> Function() action) async {
+    if (_navigationBusy) return;
+    _navigationBusy = true;
     try {
-      if (_player.hasNext) {
-        await _handler.skipToNextDirect();
-        _updateHomeWidget();
-      } else if (_playbackMode == PlaybackMode.folder) {
-        await playNextFolder();
-      }
-    } catch (e) {
-      debugPrint("Error skipping to next: $e");
+      await action();
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    } finally {
+      _navigationBusy = false;
     }
-  }
-
-  Future<void> previous() => _handler.skipToPreviousDirect();
-
-  Future<void> previousSmart() async {
-    final now = DateTime.now();
-    if (_lastTapTime != null &&
-        now.difference(_lastTapTime!) < const Duration(milliseconds: 700)) {
-      if (_player.hasPrevious) {
-        await _handler.skipToPreviousDirect();
-      } else if (_playbackMode == PlaybackMode.folder) {
-        await playPreviousFolder(playLastTrack: true);
-      }
-    } else {
-      await _player.seek(Duration.zero);
-    }
-    _lastTapTime = now;
   }
 
   Future<void> toggleShuffle() async {
@@ -1321,17 +1359,20 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _rebuildQueueForShuffleState() async {
     if (_currentSong == null || _currentPlaylist.length <= 1) return;
 
-    final wasPlaying = _player.playing;
-    final position = _player.position;
-
     if (_shuffle) {
+      final sourceQueue = _unshuffledPlaylist.isNotEmpty
+          ? _unshuffledPlaylist
+          : _currentPlaylist;
+      final sourceIndex =
+          sourceQueue.indexWhere((song) => song.id == _currentSong!.id);
       _currentPlaylist = _buildSmartShuffleQueue(
-        _currentPlaylist,
-        _currentIndex,
+        sourceQueue,
+        sourceIndex == -1 ? 0 : sourceIndex,
       );
-      _currentIndex = 0;
     } else {
-      _currentPlaylist = _orderedQueueForCurrentMode();
+      _currentPlaylist = _unshuffledPlaylist.isNotEmpty
+          ? List<SongModel>.from(_unshuffledPlaylist)
+          : _orderedQueueForCurrentMode();
       final currentSongId = _currentSong!.id;
       _currentIndex =
           _currentPlaylist.indexWhere((song) => song.id == currentSongId);
@@ -1341,8 +1382,21 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
 
-    _currentSong = _currentPlaylist[_currentIndex];
-    await _replacePlaybackQueue(position: position, shouldPlay: wasPlaying);
+    final desiredIndex =
+        _currentPlaylist.indexWhere((song) => song.id == _currentSong!.id);
+    if (desiredIndex == -1) return;
+    _currentIndex = desiredIndex;
+    final mediaItems = await _songsToMediaItems(_currentPlaylist, fast: true);
+    if (_handler.queue.value.length == mediaItems.length &&
+        _handler.queue.value.isNotEmpty) {
+      await _handler.reorderQueueToMatch(mediaItems);
+    } else {
+      await _replacePlaybackQueue(
+        position: _player.position,
+        shouldPlay: _player.playing,
+      );
+    }
+    notifyListeners();
   }
 
   List<SongModel> _buildSmartShuffleQueue(
@@ -1397,6 +1451,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   List<SongModel> _orderedQueueForCurrentMode() {
+    if (_unshuffledPlaylist.isNotEmpty) {
+      return List<SongModel>.from(_unshuffledPlaylist);
+    }
     if (_playbackMode == PlaybackMode.folder && _activeFolderPath != null) {
       return _allSongs
           .where((song) => song.data.startsWith(_activeFolderPath!))
@@ -1451,9 +1508,33 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   String _getParentPath(SongModel song) => _getParentPathForString(song.data);
 
-  Future<void> playNextFolder() => _changeFolder(1);
+  Future<void> playNextFolder() => _queueFolderMove(1);
+
   Future<void> playPreviousFolder({bool playLastTrack = false}) =>
-      _changeFolder(-1, playLastTrack: playLastTrack);
+      _queueFolderMove(-1, playLastTrack: playLastTrack);
+
+  Future<void> _queueFolderMove(
+    int offset, {
+    bool playLastTrack = false,
+  }) async {
+    _pendingFolderMoves.add(
+      _FolderMove(offset, playLastTrack: playLastTrack),
+    );
+    if (_folderNavigationBusy) return;
+
+    _folderNavigationBusy = true;
+    try {
+      while (_pendingFolderMoves.isNotEmpty) {
+        final queuedMove = _pendingFolderMoves.removeAt(0);
+        await _changeFolder(
+          queuedMove.offset,
+          playLastTrack: queuedMove.playLastTrack,
+        );
+      }
+    } finally {
+      _folderNavigationBusy = false;
+    }
+  }
 
   Future<void> _changeFolder(int offset, {bool playLastTrack = false}) async {
     if (_allSongs.isEmpty || _currentSong == null) return;
@@ -1490,12 +1571,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         .toList();
 
     if (folderSongs.isEmpty) {
-      _activeFolderPath = nextFolderPath;
-      if (offset > 0) {
-        await playNextFolder();
-      } else if (offset < 0) {
-        await playPreviousFolder(playLastTrack: playLastTrack);
-      }
+      debugPrint(
+          '[AudioProvider] Omitiendo carpeta sin canciones: $nextFolderPath');
       return;
     }
 
@@ -1742,6 +1819,25 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<int> importM3u8(File file, String playlistName) async {
     if (!await file.exists()) return 0;
+    final imported = await _songsFromM3u8(file);
+    if (imported.isEmpty) return 0;
+    await createPlaylist(playlistName, imported);
+    return imported.length;
+  }
+
+  Future<int> importFavoritesM3u8(File file) async {
+    final imported = await _songsFromM3u8(file);
+    if (imported.isEmpty) return 0;
+    for (final song in imported) {
+      _favoriteIds.add(song.id);
+    }
+    await StatePersistence.saveFavorites(_favoriteIds);
+    notifyListeners();
+    return imported.length;
+  }
+
+  Future<List<SongModel>> _songsFromM3u8(File file) async {
+    if (!await file.exists()) return [];
     final lines = await file.readAsLines();
     final byPath = {for (final song in _allSongs) song.data: song};
     final byKey = {
@@ -1761,9 +1857,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
       pendingInfo = null;
     }
-    if (imported.isEmpty) return 0;
-    await createPlaylist(playlistName, imported);
-    return imported.length;
+    return imported;
   }
 
   String _playlistSongKey(SongModel song) {
