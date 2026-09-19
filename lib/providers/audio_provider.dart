@@ -25,13 +25,6 @@ import '../utils/title_utils.dart';
 
 enum AudioPreset { concertHall, chamber, cathedral, studio, plate }
 
-class _FolderMove {
-  final int offset;
-  final bool playLastTrack;
-
-  const _FolderMove(this.offset, {this.playLastTrack = false});
-}
-
 class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   final OnAudioQuery _audioQuery = OnAudioQuery();
   final MyAudioHandler _handler;
@@ -104,8 +97,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Uri? _fallbackArtworkFileUri;
   int _queueLoadGeneration = 0;
   bool _navigationBusy = false;
-  final List<_FolderMove> _pendingFolderMoves = [];
-  bool _folderNavigationBusy = false;
 
   // Bug #9: Estado de selección múltiple
   final Set<int> _selectedSongIds = {};
@@ -1508,37 +1499,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   String _getParentPath(SongModel song) => _getParentPathForString(song.data);
 
-  Future<void> playNextFolder() => _queueFolderMove(1);
-
+  Future<void> playNextFolder() => _changeFolder(1);
   Future<void> playPreviousFolder({bool playLastTrack = false}) =>
-      _queueFolderMove(-1, playLastTrack: playLastTrack);
-
-  Future<void> _queueFolderMove(
-    int offset, {
-    bool playLastTrack = false,
-  }) async {
-    _pendingFolderMoves.add(
-      _FolderMove(offset, playLastTrack: playLastTrack),
-    );
-    if (_folderNavigationBusy) return;
-
-    _folderNavigationBusy = true;
-    try {
-      while (_pendingFolderMoves.isNotEmpty) {
-        final queuedMove = _pendingFolderMoves.removeAt(0);
-        try {
-          await _changeFolder(
-            queuedMove.offset,
-            playLastTrack: queuedMove.playLastTrack,
-          );
-        } catch (e) {
-          debugPrint('[AudioProvider] Error cambiando de carpeta: $e');
-        }
-      }
-    } finally {
-      _folderNavigationBusy = false;
-    }
-  }
+      _changeFolder(-1, playLastTrack: playLastTrack);
 
   Future<void> _changeFolder(int offset, {bool playLastTrack = false}) async {
     if (_allSongs.isEmpty || _currentSong == null) return;
@@ -1563,30 +1526,32 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       currentIndex = offset > 0 ? -1 : 0;
     }
 
-    for (var attempt = 0; attempt < allFolders.length; attempt++) {
-      final nextIndex = (currentIndex + offset) % allFolders.length;
-      final wrappedNextIndex =
-          nextIndex < 0 ? nextIndex + allFolders.length : nextIndex;
-      final nextFolderPath = allFolders[wrappedNextIndex];
-      final folderSongs = _allSongs
-          .where((s) =>
-              _normalizeFolderPath(_getParentPath(s)) ==
-              _normalizeFolderPath(nextFolderPath))
-          .toList();
+    final nextIndex = (currentIndex + offset) % allFolders.length;
+    final wrappedNextIndex =
+        nextIndex < 0 ? nextIndex + allFolders.length : nextIndex;
 
-      if (folderSongs.isNotEmpty) {
-        await playFolderSongs(
-          nextFolderPath,
-          folderSongs,
-          playLastTrack ? folderSongs.length - 1 : 0,
-        );
-        return;
+    final nextFolderPath = allFolders[wrappedNextIndex];
+    final folderSongs = _allSongs
+        .where((s) =>
+            _normalizeFolderPath(_getParentPath(s)) ==
+            _normalizeFolderPath(nextFolderPath))
+        .toList();
+
+    if (folderSongs.isEmpty) {
+      _activeFolderPath = nextFolderPath;
+      if (offset > 0) {
+        await playNextFolder();
+      } else if (offset < 0) {
+        await playPreviousFolder(playLastTrack: playLastTrack);
       }
-
-      debugPrint(
-          '[AudioProvider] Omitiendo carpeta sin canciones: $nextFolderPath');
-      currentIndex = wrappedNextIndex;
+      return;
     }
+
+    await playFolderSongs(
+      nextFolderPath,
+      folderSongs,
+      playLastTrack ? folderSongs.length - 1 : 0,
+    );
   }
 
   void deleteFolder(String folderPath) {
