@@ -58,4 +58,7 @@ dependencies {
     implementation "androidx.media3:media3-exoplayer-dash:$exoplayer_version"
     implementation "androidx.media3:media3-exoplayer-hls:$exoplayer_version"
     implementation "androidx.media3:media3-exoplayer-smoothstreaming:$exoplayer_version"
+    implementation "dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7"
+    implementation "com.arthenica:smart-exception-java:0.2.1"
+
 }

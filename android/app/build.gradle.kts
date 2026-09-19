@@ -35,6 +35,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -52,7 +53,7 @@ android {
         // arquitecturas relevantes. Sin este bloque, Gradle puede omitir la
         // ABI del dispositivo de prueba y dlopen falla con "not found".
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
     }
 
@@ -77,6 +78,7 @@ android {
             useLegacyPackaging = true
         }
     }
+
 }
 
 flutter {
@@ -84,6 +86,10 @@ flutter {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    implementation(files("libs/decoder_ffmpeg-release.aar"))
+    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7")
+    implementation("com.arthenica:smart-exception-java:0.2.1")
     implementation("androidx.media3:media3-common:1.4.1")
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     // Fix Bug #3: DocumentFile necesario para operaciones SAF en SD Card

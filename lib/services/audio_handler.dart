@@ -57,10 +57,13 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     // 5. Error listener: saltar automáticamente canciones no reproducibles
     // Esto previene el bug de "audio simulado" al cambiar carpetas cuando
     // un archivo tiene ruta inválida o está dañado.
-    _player.playbackEventStream.listen((_) {}, onError: (Object e, StackTrace st) {
-      debugPrint('[AudioHandler] Error de reproducción, saltando pista: $e');
-      _triggerNextTrackSafe();
-    });
+    _player.playbackEventStream.listen(
+      (_) {},
+      onError: (Object e, StackTrace st) {
+        debugPrint('[AudioHandler] Error de reproducción, saltando pista: $e');
+        _triggerNextTrackSafe();
+      },
+    );
   }
 
   void _triggerNextTrackSafe() {
@@ -87,29 +90,32 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   void _broadcastState(PlaybackEvent event) {
     final playing = _player.playing;
-    playbackState.add(playbackState.value.copyWith(
-      controls: [
-        MediaControl.skipToPrevious,
-        playing ? MediaControl.pause : MediaControl.play,
-        MediaControl.skipToNext,
-        MediaControl.stop,
-      ],
-      systemActions: const {},
-      androidCompactActionIndices: const [0, 1, 2],
-      processingState: const {
-            ProcessingState.idle: AudioProcessingState.idle,
-            ProcessingState.loading: AudioProcessingState.loading,
-            ProcessingState.buffering: AudioProcessingState.buffering,
-            ProcessingState.ready: AudioProcessingState.ready,
-            ProcessingState.completed: AudioProcessingState.completed,
-          }[_player.processingState] ??
-          AudioProcessingState.idle,
-      playing: playing,
-      updatePosition: _player.position,
-      bufferedPosition: _player.bufferedPosition,
-      speed: _player.speed,
-      queueIndex: event.currentIndex,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        controls: [
+          MediaControl.skipToPrevious,
+          playing ? MediaControl.pause : MediaControl.play,
+          MediaControl.skipToNext,
+          MediaControl.stop,
+        ],
+        systemActions: const {},
+        androidCompactActionIndices: const [0, 1, 2],
+        processingState:
+            const {
+              ProcessingState.idle: AudioProcessingState.idle,
+              ProcessingState.loading: AudioProcessingState.loading,
+              ProcessingState.buffering: AudioProcessingState.buffering,
+              ProcessingState.ready: AudioProcessingState.ready,
+              ProcessingState.completed: AudioProcessingState.completed,
+            }[_player.processingState] ??
+            AudioProcessingState.idle,
+        playing: playing,
+        updatePosition: _player.position,
+        bufferedPosition: _player.bufferedPosition,
+        speed: _player.speed,
+        queueIndex: event.currentIndex,
+      ),
+    );
   }
 
   @override
@@ -229,8 +235,12 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     });
   }
 
-  Future<void> loadPlaylist(List<MediaItem> newQueue, int initialIndex,
-      [Duration? initialPosition, bool shouldPlay = true]) async {
+  Future<void> loadPlaylist(
+    List<MediaItem> newQueue,
+    int initialIndex, [
+    Duration? initialPosition,
+    bool shouldPlay = true,
+  ]) async {
     await replacePlaylist(
       newQueue,
       initialIndex,
@@ -246,6 +256,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     required bool shouldPlay,
   }) async {
     var hasQueue = false;
+    var sourceLoaded = false;
 
     await _serializePlaylistMutation(() async {
       // Safe Mode Switching: rebuild ConcatenatingAudioSource entirely to prevent caching bugs
@@ -263,33 +274,45 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       mediaItem.add(newQueue[safeIndex]);
 
       _playlist = ConcatenatingAudioSource(
-          children: newQueue.map(_createAudioSource).toList());
+        children: newQueue.map(_createAudioSource).toList(),
+      );
 
       // Explicitly set the initial index down at the native source creation!
-      await _player.setAudioSource(_playlist,
-          initialIndex: safeIndex, initialPosition: initialPosition);
+      try {
+        await _player.setAudioSource(
+          _playlist,
+          initialIndex: safeIndex,
+          initialPosition: initialPosition,
+        );
+        sourceLoaded = true;
+      } catch (e, st) {
+        debugPrint(
+          '[AudioHandler] Unable to load audio source, skipping track: $e',
+        );
+        debugPrint('$st');
+        _triggerNextTrackSafe();
+      }
 
-      if (!shouldPlay) {
+      if (!shouldPlay && sourceLoaded) {
         _broadcastState(_player.playbackEvent);
       }
     });
 
-    if (shouldPlay && hasQueue) {
+    if (shouldPlay && hasQueue && sourceLoaded) {
       await _player.play();
     }
   }
 
-  Future<void> _serializePlaylistMutation(
-    Future<void> Function() operation,
-  ) {
+  Future<void> _serializePlaylistMutation(Future<void> Function() operation) {
     final run = _playlistMutation.then((_) => operation());
     _playlistMutation = run.catchError((_) {});
     return run;
   }
 
   AudioSource _createAudioSource(MediaItem item) => AudioSource.uri(
-      item.id.startsWith('/') ? Uri.file(item.id) : Uri.parse(item.id),
-      tag: item);
+    item.id.startsWith('/') ? Uri.file(item.id) : Uri.parse(item.id),
+    tag: item,
+  );
 
   Future<void> playDirect() => _player.play();
 
