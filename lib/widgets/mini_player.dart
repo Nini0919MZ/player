@@ -165,6 +165,9 @@ class _PlayerModalContent extends StatefulWidget {
 class _PlayerModalContentState extends State<_PlayerModalContent> {
   bool _modoAuto = false;
   bool _epicentro = false;
+  Future<LyricsResult?>? _lyricsFuture;
+  String? _lyricsSongPath;
+  LyricsSource? _lyricsSource;
 
   @override
   void initState() {
@@ -202,6 +205,20 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
     if (audioProvider.isEpicenterEnabled != nextValue) {
       await audioProvider.toggleEpicenter();
     }
+  }
+
+  Future<LyricsResult?> _loadLyrics(
+    SongModel song,
+    LyricsSource source,
+  ) {
+    if (_lyricsFuture == null ||
+        _lyricsSongPath != song.data ||
+        _lyricsSource != source) {
+      _lyricsSongPath = song.data;
+      _lyricsSource = source;
+      _lyricsFuture = LyricsService.load(song, source);
+    }
+    return _lyricsFuture!;
   }
 
   Future<void> _saveSongToPlaylist(
@@ -630,24 +647,29 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                   ),
                 ),
               ),
-              if (audioProvider.lyricsVisible)
-                FutureBuilder<LyricsResult?>(
-                  future: LyricsService.load(song, audioProvider.lyricsSource),
-                  builder: (context, snapshot) {
-                    final result = snapshot.data;
-                    if (snapshot.connectionState == ConnectionState.waiting ||
-                        result?.hasTimestamps != true) {
-                      return const SizedBox.shrink();
-                    }
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: _timestampedLyrics(
-                        result!.lines,
-                        audioProvider.player.positionStream,
-                      ),
-                    );
-                  },
-                ),
+              SizedBox(
+                height: 56,
+                child: audioProvider.lyricsVisible
+                    ? FutureBuilder<LyricsResult?>(
+                        future: _loadLyrics(song, audioProvider.lyricsSource),
+                        builder: (context, snapshot) {
+                          final result = snapshot.data;
+                          if (snapshot.connectionState ==
+                                  ConnectionState.waiting ||
+                              result?.hasTimestamps != true) {
+                            return const SizedBox.shrink();
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: _timestampedLyrics(
+                              result!.lines,
+                              audioProvider.player.positionStream,
+                            ),
+                          );
+                        },
+                      )
+                    : null,
+              ),
               const Spacer(flex: 2),
               Row(
                 children: [
