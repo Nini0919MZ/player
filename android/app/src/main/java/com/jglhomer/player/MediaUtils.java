@@ -1,6 +1,7 @@
 package com.jglhomer.player;
 
 import android.media.MediaMetadataRetriever;
+import android.util.Log;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
@@ -19,6 +20,21 @@ public class MediaUtils {
         File file = new File(path);
         String format = getFileExtension(file);
 
+        metadata.put("title", file.getName());
+        metadata.put("artist", "Desconocido");
+        metadata.put("albumArtist", "Desconocido");
+        metadata.put("album", "Desconocido");
+        metadata.put("composer", "Desconocido");
+        metadata.put("genre", "Desconocido");
+        metadata.put("year", "Desconocido");
+        metadata.put("track", "Desconocido");
+        metadata.put("bitrate", "0");
+        metadata.put("mimeType", "Desconocido");
+        metadata.put("sampleRate", "0");
+        metadata.put("bitsPerSample", "0");
+        metadata.put("duration", "0");
+        metadata.put("format", format);
+
         try {
             retriever.setDataSource(path);
 
@@ -35,6 +51,7 @@ public class MediaUtils {
             String track = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER);
             String bitrate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE);
             String mimeType = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE);
+            String duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
 
             String sampleRate = null;
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
@@ -56,21 +73,19 @@ public class MediaUtils {
             metadata.put("track", track != null ? track : "");
             metadata.put("bitrate", bitrate != null ? bitrate : "");
             metadata.put("mimeType", mimeType != null ? mimeType : "");
+            metadata.put("duration", duration != null ? duration : "0");
             metadata.put("sampleRate", sampleRate != null ? sampleRate : "");
             metadata.put("bitsPerSample", bitsPerSample != null ? bitsPerSample : "");
             metadata.put("format", format);
-        } catch (Exception e) {
-            e.printStackTrace();
-            metadata.put("title", file.getName());
-            metadata.put("artist", "Desconocido");
-            metadata.put("bitrate", "");
-            metadata.put("mimeType", "");
-            metadata.put("format", format);
+        } catch (IllegalArgumentException e) {
+            Log.w("MediaUtils", "No se pudo leer metadata de: " + path, e);
+        } catch (RuntimeException e) {
+            Log.w("MediaUtils", "Error leyendo metadata de: " + path, e);
         } finally {
             try {
                 retriever.release();
             } catch (Exception e) {
-                // Ignore release errors
+                Log.w("MediaUtils", "No se pudo liberar MediaMetadataRetriever", e);
             }
         }
 

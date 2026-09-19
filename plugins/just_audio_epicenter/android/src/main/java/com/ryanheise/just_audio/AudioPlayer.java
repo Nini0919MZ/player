@@ -64,6 +64,8 @@ import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
 import java.io.IOException;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -72,6 +74,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import com.arthenica.ffmpegkit.FFmpegKit;
+import com.arthenica.ffmpegkit.ReturnCode;
 
 public class AudioPlayer implements MethodCallHandler, Player.Listener, MetadataOutput {
     public static final int ERROR_ABORT = 10000000;
@@ -638,9 +642,11 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
         String id = (String)map.get("id");
         switch ((String)map.get("type")) {
         case "progressive":
+            Uri sourceUri = Uri.parse((String)map.get("uri"));
+            sourceUri = prepareWmaUri(sourceUri);
             return new ProgressiveMediaSource.Factory(buildDataSourceFactory(mapGet(map, "headers")), buildExtractorsFactory(mapGet(map, "options")))
                     .createMediaSource(new MediaItem.Builder()
-                            .setUri(Uri.parse((String)map.get("uri")))
+                            .setUri(sourceUri)
                             .setTag(id)
                             .build());
         case "dash":
@@ -684,6 +690,43 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
         default:
             throw new IllegalArgumentException("Unknown AudioSource type: " + map.get("type"));
         }
+    }
+
+    private Uri prepareWmaUri(Uri sourceUri) {
+        if (!"file".equals(sourceUri.getScheme())
+                || sourceUri.getPath() == null
+                || !sourceUri.getPath().toLowerCase(java.util.Locale.US).endsWith(".wma")) {
+            return sourceUri;
+        }
+        try {
+            File converted = convertWmaToWav(new File(sourceUri.getPath()));
+            Log.i(TAG, "Converted WMA to WAV for playback: " + converted.getAbsolutePath());
+            return Uri.fromFile(converted);
+        } catch (Exception e) {
+            Log.w(TAG, "WMA conversion unavailable; leaving source unchanged", e);
+            return sourceUri;
+        }
+    }
+
+    private File convertWmaToWav(File input) throws IOException {
+        File output = File.createTempFile("just_audio_wma_", ".wav", context.getCacheDir());
+        try {
+            String command = "-y -i " + quoteShellArgument(input.getAbsolutePath())
+                    + " -vn -acodec pcm_s16le " + quoteShellArgument(output.getAbsolutePath());
+            com.arthenica.ffmpegkit.Session session = FFmpegKit.execute(command);
+            if (!ReturnCode.isSuccess(session.getReturnCode())) {
+                throw new IOException("FFmpeg WMA conversion failed: " + session.getFailStackTrace());
+            }
+            return output;
+        } catch (Exception e) {
+            if (!output.delete()) Log.w(TAG, "Unable to delete failed WMA conversion", e);
+            if (e instanceof IOException) throw (IOException)e;
+            throw new IOException("Unable to convert WMA", e);
+        }
+    }
+
+    private String quoteShellArgument(String path) {
+        return "'" + path.replace("'", "'\\''") + "'";
     }
 
     private MediaSource[] getAudioSourcesArray(final Object json) {
@@ -795,8 +838,16 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
                             .build();
                     }
                 };
+                epicenterRenderersFactory.setExtensionRendererMode(
+                    DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
+                );
                 Renderer[] defaultRenderers = epicenterRenderersFactory
                     .createRenderers(eventHandler, videoListener, audioListener, textOutput, metadataOutput);
+                for (Renderer renderer : defaultRenderers) {
+                    if (renderer.getClass().getName().contains("FfmpegAudioRenderer")) {
+                        Log.i(TAG, "FFmpeg renderer loaded: " + renderer.getClass().getName());
+                    }
+                }
                 Renderer[] allRenderers = Arrays.copyOf(defaultRenderers, defaultRenderers.length + 1);
                 allRenderers[defaultRenderers.length] = new ObserverRenderer();
                 return allRenderers;
