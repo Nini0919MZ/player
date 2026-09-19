@@ -1526,10 +1526,14 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     try {
       while (_pendingFolderMoves.isNotEmpty) {
         final queuedMove = _pendingFolderMoves.removeAt(0);
-        await _changeFolder(
-          queuedMove.offset,
-          playLastTrack: queuedMove.playLastTrack,
-        );
+        try {
+          await _changeFolder(
+            queuedMove.offset,
+            playLastTrack: queuedMove.playLastTrack,
+          );
+        } catch (e) {
+          debugPrint('[AudioProvider] Error cambiando de carpeta: $e');
+        }
       }
     } finally {
       _folderNavigationBusy = false;
@@ -1559,28 +1563,30 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       currentIndex = offset > 0 ? -1 : 0;
     }
 
-    final nextIndex = (currentIndex + offset) % allFolders.length;
-    final wrappedNextIndex =
-        nextIndex < 0 ? nextIndex + allFolders.length : nextIndex;
+    for (var attempt = 0; attempt < allFolders.length; attempt++) {
+      final nextIndex = (currentIndex + offset) % allFolders.length;
+      final wrappedNextIndex =
+          nextIndex < 0 ? nextIndex + allFolders.length : nextIndex;
+      final nextFolderPath = allFolders[wrappedNextIndex];
+      final folderSongs = _allSongs
+          .where((s) =>
+              _normalizeFolderPath(_getParentPath(s)) ==
+              _normalizeFolderPath(nextFolderPath))
+          .toList();
 
-    final nextFolderPath = allFolders[wrappedNextIndex];
-    final folderSongs = _allSongs
-        .where((s) =>
-            _normalizeFolderPath(_getParentPath(s)) ==
-            _normalizeFolderPath(nextFolderPath))
-        .toList();
+      if (folderSongs.isNotEmpty) {
+        await playFolderSongs(
+          nextFolderPath,
+          folderSongs,
+          playLastTrack ? folderSongs.length - 1 : 0,
+        );
+        return;
+      }
 
-    if (folderSongs.isEmpty) {
       debugPrint(
           '[AudioProvider] Omitiendo carpeta sin canciones: $nextFolderPath');
-      return;
+      currentIndex = wrappedNextIndex;
     }
-
-    await playFolderSongs(
-      nextFolderPath,
-      folderSongs,
-      playLastTrack ? folderSongs.length - 1 : 0,
-    );
   }
 
   void deleteFolder(String folderPath) {

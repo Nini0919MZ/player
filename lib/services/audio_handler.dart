@@ -40,6 +40,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     // 3. Fallback completion detection: Position >= Duration
     _player.positionStream.listen((position) {
       if (_player.loopMode != LoopMode.off) return;
+      if (!_player.playing) return;
       final duration = _player.duration;
       if (duration != null &&
           position >= duration &&
