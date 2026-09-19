@@ -2,6 +2,10 @@ package com.jglhomer.player;
 
 import android.media.MediaMetadataRetriever;
 import android.util.Log;
+import com.arthenica.ffmpegkit.FFprobeKit;
+import com.arthenica.ffmpegkit.MediaInformation;
+import com.arthenica.ffmpegkit.MediaInformationSession;
+import com.arthenica.ffmpegkit.StreamInformation;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
@@ -34,6 +38,10 @@ public class MediaUtils {
         metadata.put("bitsPerSample", "0");
         metadata.put("duration", "0");
         metadata.put("format", format);
+
+        if ("WMA".equals(format)) {
+            return getWmaMetadata(path, file, metadata);
+        }
 
         try {
             retriever.setDataSource(path);
@@ -90,6 +98,57 @@ public class MediaUtils {
         }
 
         return metadata;
+    }
+
+    private static Map<String, String> getWmaMetadata(
+            String path, File file, HashMap<String, String> metadata) {
+        try {
+            MediaInformationSession session = FFprobeKit.getMediaInformation(path);
+            MediaInformation information = session.getMediaInformation();
+            if (information == null) {
+                Log.w("MediaUtils", "FFprobe no devolvió metadata para: " + path);
+                return metadata;
+            }
+
+            org.json.JSONObject tags = information.getTags();
+            putIfPresent(metadata, "title", tag(tags, "title"), file.getName());
+            putIfPresent(metadata, "artist", tag(tags, "artist"), "Artista Desconocido");
+            putIfPresent(metadata, "albumArtist", firstTag(tags, "album_artist", "albumartist"), "");
+            putIfPresent(metadata, "album", tag(tags, "album"), "");
+            putIfPresent(metadata, "composer", tag(tags, "composer"), "");
+            putIfPresent(metadata, "genre", tag(tags, "genre"), "");
+            putIfPresent(metadata, "year", firstTag(tags, "date", "year"), "");
+            putIfPresent(metadata, "track", firstTag(tags, "track", "tracknumber"), "");
+            putIfPresent(metadata, "bitrate", information.getBitrate(), "");
+            putIfPresent(metadata, "duration", information.getDuration(), "0");
+            putIfPresent(metadata, "mimeType", "audio/x-ms-wma", "");
+
+            if (information.getStreams() != null) {
+                for (StreamInformation stream : information.getStreams()) {
+                    if ("audio".equals(stream.getType())) {
+                        putIfPresent(metadata, "sampleRate", stream.getSampleRate(), "");
+                        break;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.w("MediaUtils", "No se pudo leer metadata WMA con FFprobe: " + path, e);
+        }
+        return metadata;
+    }
+
+    private static String tag(org.json.JSONObject tags, String key) {
+        return tags == null ? null : tags.optString(key, null);
+    }
+
+    private static String firstTag(org.json.JSONObject tags, String first, String second) {
+        String value = tag(tags, first);
+        return value != null && !value.isEmpty() ? value : tag(tags, second);
+    }
+
+    private static void putIfPresent(
+            Map<String, String> metadata, String key, String value, String fallback) {
+        metadata.put(key, value != null && !value.isEmpty() ? value : fallback);
     }
 
     private static String getFileExtension(File file) {
